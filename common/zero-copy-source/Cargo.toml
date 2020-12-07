@@ -1,0 +1,16 @@
+[package]
+name = "zero-copy-source"
+version = "0.0.0"
+authors = [ "dorin-iancu <dorin.iancu@elrond.com>",]
+edition = "2018"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies.elrond-wasm]
+version = "0.9.6"
+path = "../../../elrond-wasm-rs/elrond-wasm"
+
+[dependencies.util]
+version = "0.0.0"
+path = "../util"
