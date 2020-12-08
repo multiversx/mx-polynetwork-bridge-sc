@@ -1,63 +1,72 @@
-use elrond_wasm::{Box, H256, Vec};
+use elrond_wasm::{BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
+use zero_copy_sink::*;
+use zero_copy_source::*;
 
-// TO DO: Change to reflect the types received in documentation
+pub struct ChainConfig; // ?
+
+pub struct VbftBlockInfo {
+	pub proposer: u32,
+	pub vrf_value: Vec<u8>,
+	pub vrf_proof: Vec<u8>,
+	pub last_config_block_num: u32,
+	pub new_chain_config: ChainConfig
+}
+
 pub struct Header {
-    version: u32,
-    chain_id: u64,
-    prev_block_hash: H256,
-    transactions_root: H256,
-    cross_states_root: H256,
-    block_root: H256,
-    timestamp: u32,
-    height: u32,
-    consensus_data: u64,
-    consensus_payload: Vec<u8>,
-    next_book_keeper: EthAddress
+    pub version: u32,
+    pub chain_id: u64,
+    pub prev_block_hash: H256,
+    pub transactions_root: H256,
+    pub cross_states_root: H256,
+    pub block_root: H256,
+    pub timestamp: u32,
+    pub height: u32,
+    pub consensus_data: u64,
+    pub consensus_payload: BoxedBytes, // marshalled VbftBlockInfo, if it exists
+	pub next_book_keeper: EthAddress,
+	pub book_keepers: Vec<PublicKey>,
+	pub sig_data: Vec<Signature>,
+	pub block_hash: H256
 }
 
 impl Header {
     
 }
 
-/* TO DO: change implementation to using ZeroCopySink and ZeroCopySource
-
 impl NestedEncode for Header {
 	fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
-		self.version.dep_encode(dest)?;
-		self.chain_id.dep_encode(dest)?;
-		self.prev_block_hash.dep_encode(dest)?;
-		self.transactions_root.dep_encode(dest)?;
-		self.cross_states_root.dep_encode(dest)?;
-		self.block_root.dep_encode(dest)?;
-		self.timestamp.dep_encode(dest)?;
-		self.height.dep_encode(dest)?;
-        self.consensus_data.dep_encode(dest)?;
-        self.consensus_payload.dep_encode(dest)?;
-        self.next_book_keeper.dep_encode(dest)?;
+		let mut sink = ZeroCopySink::new();
+
+		sink.write_u32(self.version);
+		sink.write_u64(self.chain_id);
+		sink.write_hash(&self.prev_block_hash);
+		sink.write_hash(&self.transactions_root);
+		sink.write_hash(&self.cross_states_root);
+		sink.write_hash(&self.block_root);
+		sink.write_u32(self.timestamp);
+		sink.write_u32(self.height);
+		sink.write_u64(self.consensus_data);
+		sink.write_var_bytes(self.consensus_payload.as_slice());
+		sink.write_eth_address(&self.next_book_keeper);
+		
+		sink.write_var_uint(self.book_keepers.len() as u64);
+		for pubkey in &self.book_keepers {
+			sink.write_public_key(pubkey);
+		}
+
+		sink.write_var_uint(self.sig_data.len() as u64);
+		for sig in &self.sig_data {
+			sink.write_signature(sig);
+		}
+
+		sink.write_hash(&self.block_hash);
+
+		dest.write(sink.get_sink().as_slice());
 
 		Ok(())
-	}
-
-	fn dep_encode_or_exit<O: NestedEncodeOutput, ExitCtx: Clone>(
-		&self,
-		dest: &mut O,
-		c: ExitCtx,
-		exit: fn(ExitCtx, EncodeError) -> !,
-	) {
-        self.version.dep_encode_or_exit(dest, c.clone(), exit);
-		self.chain_id.dep_encode_or_exit(dest, c.clone(), exit);
-		self.prev_block_hash.dep_encode_or_exit(dest, c.clone(), exit);
-		self.transactions_root.dep_encode_or_exit(dest, c.clone(), exit);
-		self.cross_states_root.dep_encode_or_exit(dest, c.clone(), exit);
-		self.block_root.dep_encode_or_exit(dest, c.clone(), exit);
-		self.timestamp.dep_encode_or_exit(dest, c.clone(), exit);
-		self.height.dep_encode_or_exit(dest, c.clone(), exit);
-        self.consensus_data.dep_encode_or_exit(dest, c.clone(), exit);
-        self.consensus_payload.dep_encode_or_exit(dest, c.clone(), exit);
-        self.next_book_keeper.dep_encode_or_exit(dest, c.clone(), exit);
 	}
 }
 
@@ -66,52 +75,132 @@ impl TopEncode for Header {
 	fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
 		top_encode_from_nested(self, output)
 	}
-
-	#[inline]
-	fn top_encode_or_exit<O: TopEncodeOutput, ExitCtx: Clone>(
-		&self,
-		output: O,
-		c: ExitCtx,
-		exit: fn(ExitCtx, EncodeError) -> !,
-	) {
-		top_encode_from_nested_or_exit(self, output, c, exit);
-	}
 }
 
 impl NestedDecode for Header {
 	fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-		Ok(Header {
-            version: u32::dep_decode(input)?,
-            chain_id: u64::dep_decode(input)?,
-            prev_block_hash: H256::dep_decode(input)?,
-            transactions_root: H256::dep_decode(input)?,
-            cross_states_root: H256::dep_decode(input)?,
-            block_root: H256::dep_decode(input)?,
-            timestamp: u32::dep_decode(input)?,
-            height: u32::dep_decode(input)?,
-            consensus_data: u64::dep_decode(input)?,
-            consensus_payload: Vec::<u8>::dep_decode(input)?,
-            next_book_keeper: BoxArray20::dep_decode(input)?,
-		})
-	}
+		let mut source = ZeroCopySource::new(BoxedBytes::from(input.flush()));
 
-	fn dep_decode_or_exit<I: NestedDecodeInput, ExitCtx: Clone>(
-		input: &mut I,
-		c: ExitCtx,
-		exit: fn(ExitCtx, DecodeError) -> !,
-	) -> Self {
-		Header {
-            version: u32::dep_decode_or_exit(input, c.clone(), exit),
-            chain_id: u64::dep_decode_or_exit(input, c.clone(), exit),
-            prev_block_hash: H256::dep_decode_or_exit(input, c.clone(), exit),
-            transactions_root: H256::dep_decode_or_exit(input, c.clone(), exit),
-            cross_states_root: H256::dep_decode_or_exit(input, c.clone(), exit),
-            block_root: H256::dep_decode_or_exit(input, c.clone(), exit),
-            timestamp: u32::dep_decode_or_exit(input, c.clone(), exit),
-            height: u32::dep_decode_or_exit(input, c.clone(), exit),
-            consensus_data: u64::dep_decode_or_exit(input, c.clone(), exit),
-            consensus_payload: Vec::<u8>::dep_decode_or_exit(input, c.clone(), exit),
-            next_book_keeper: BoxArray20::dep_decode_or_exit(input, c.clone(), exit),
+		let version;
+		let chain_id;
+		let prev_block_hash;
+		let transactions_root;
+		let cross_states_root;
+		let block_root;
+		let timestamp;
+		let height;
+		let consensus_data;
+		let consensus_payload;
+		let next_book_keeper;
+		let mut book_keepers = Vec::new();
+		let mut sig_data = Vec::new();
+		let block_hash;
+
+		match source.next_u32() {
+			Some(val) => version = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u64() {
+			Some(val) => chain_id = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => prev_block_hash = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => transactions_root = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => cross_states_root = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => block_root = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u32() {
+			Some(val) => timestamp = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u32() {
+			Some(val) => height = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u64() {
+			Some(val) => consensus_data = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_var_bytes() {
+			Some(val) => consensus_payload = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_eth_address() {
+			Some(val) => next_book_keeper = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_var_uint() {
+			Some(len) => {
+				for _ in 0..len {
+					match source.next_public_key() {
+						Some(val) => book_keepers.push(val),
+						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					}
+				}
+			},
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		}
+
+		match source.next_var_uint() {
+			Some(len) => {
+				for _ in 0..len {
+					match source.next_signature() {
+						Some(val) => sig_data.push(val),
+						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					}
+				}
+			},
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		}
+
+		match source.next_hash() {
+			Some(val) => block_hash = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		// if there are bytes left, something went wrong
+		if source.get_bytes_left() > 0 {
+			return Err(DecodeError::INPUT_TOO_LONG);
+		}
+		else {
+			return Ok(Header {
+				version,
+				chain_id,
+				prev_block_hash,
+				transactions_root,
+				cross_states_root,
+				block_root,
+				timestamp,
+				height,
+				consensus_data,
+				consensus_payload,
+				next_book_keeper,
+				book_keepers,
+				sig_data,
+				block_hash,
+			});
 		}
 	}
 }
@@ -120,13 +209,4 @@ impl TopDecode for Header {
 	fn top_decode<I: TopDecodeInput>(input: I) -> Result<Self, DecodeError> {
 		top_decode_from_nested(input)
 	}
-
-	fn top_decode_or_exit<I: TopDecodeInput, ExitCtx: Clone>(
-		input: I,
-		c: ExitCtx,
-		exit: fn(ExitCtx, DecodeError) -> !,
-	) -> Self {
-		top_decode_from_nested_or_exit(input, c, exit)
-	}
 }
-*/

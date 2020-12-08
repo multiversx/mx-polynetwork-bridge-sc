@@ -14,3 +14,11 @@ path = "../../../elrond-wasm-rs/elrond-wasm"
 [dependencies.util]
 version = "0.0.0"
 path = "../util"
+
+[dependencies.zero-copy-sink]
+version = "0.0.0"
+path = "../zero-copy-sink"
+
+[dependencies.zero-copy-source]
+version = "0.0.0"
+path = "../zero-copy-source"

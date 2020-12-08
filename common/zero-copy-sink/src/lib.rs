@@ -19,8 +19,8 @@ impl ZeroCopySink {
         BoxedBytes::from(self.sink.as_slice())
     }
 
-    pub fn write_bytes(&mut self, bytes: &BoxedBytes) {
-        self.sink.extend_from_slice(bytes.as_slice());
+    pub fn write_bytes(&mut self, bytes: &[u8]) {
+        self.sink.extend_from_slice(bytes);
     }
 
     pub fn write_u8(&mut self, byte: u8) {
@@ -69,13 +69,13 @@ impl ZeroCopySink {
         }
     }
 
-    pub fn write_var_bytes(&mut self, bytes: &BoxedBytes) {
+    pub fn write_var_bytes(&mut self, bytes: &[u8]) {
         self.write_var_uint(bytes.len() as u64);
         self.write_bytes(bytes);
     }
 
     pub fn write_eth_address(&mut self, address: &EthAddress) {
-        self.write_bytes(&BoxedBytes::from(&(*address)[..]));
+        self.write_bytes(address.as_slice());
     }
 
     pub fn write_elrond_address(&mut self, address: &Address) {
@@ -83,6 +83,14 @@ impl ZeroCopySink {
     }
 
     pub fn write_hash(&mut self, hash: &H256) {
-        self.write_bytes(&BoxedBytes::from(hash.as_bytes()));
+        self.write_bytes(hash.as_bytes());
+    }
+
+    pub fn write_public_key(&mut self, key: &PublicKey) {
+        self.write_bytes(key.as_slice());
+    }
+
+    pub fn write_signature(&mut self, sig: &Signature) {
+        self.write_bytes(sig.as_slice());
     }
 }

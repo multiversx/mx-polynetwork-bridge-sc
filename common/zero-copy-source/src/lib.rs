@@ -10,9 +10,9 @@ pub struct ZeroCopySource {
 
 // little endian encoding is used
 impl ZeroCopySource {
-    pub fn new(source: BoxedBytes) -> Self {
+    pub fn new(source: &[u8]) -> Self {
         let mut src = Vec::new();
-        src.extend_from_slice(source.as_slice());
+        src.extend_from_slice(source);
 
         ZeroCopySource {
             source: src,
@@ -131,13 +131,13 @@ impl ZeroCopySource {
         }
     }
 
-    /* TO DO
+    /* TO DO - and pubkey/sig */
     pub fn next_eth_address(&mut self) -> Option<EthAddress> {
         match self.next_bytes(ETH_ADDRESS_LEN) {
-            Some(address) => Some(address.as_slice()),
+            Some(address) => Some(EthAddress::from(address.as_slice())),
             None => None
         }
-    }*/
+    }
 
     pub fn next_elrond_address(&mut self) -> Option<H256> {
         self.next_hash()
@@ -146,6 +146,20 @@ impl ZeroCopySource {
     pub fn next_hash(&mut self) -> Option<Address> {
         match self.next_bytes(Address::len_bytes()) {
             Some(address_bytes) => Some(Address::from_slice(address_bytes.as_slice())),
+            None => None
+        }
+    }
+
+    pub fn next_public_key(&mut self) -> Option<PublicKey> {
+        match self.next_bytes(POLYCHAIN_PUBKEY_LEN) {
+            Some(key) => Some(PublicKey::from(key.as_slice())),
+            None => None
+        }
+    }
+
+    pub fn next_signature(&mut self) -> Option<Signature> {
+        match self.next_bytes(POLYCHAIN_SIGNATURE_LEN) {
+            Some(sig) => Some(Signature::from(sig.as_slice())),
             None => None
         }
     }

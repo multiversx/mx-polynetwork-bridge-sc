@@ -3,12 +3,6 @@
 
 imports!();
 
-const POLYCHAIN_PUBKEY_LEN: usize = 67;
-const POLYCHAIN_SIGNATURE_LEN: usize = 65;
-
-type PublicKey = Box<[u8;POLYCHAIN_PUBKEY_LEN]>;
-type Signature = Box<[u8;POLYCHAIN_SIGNATURE_LEN]>;
-
 #[elrond_wasm_derive::contract(BlockHeaderSyncImpl)]
 pub trait BlockHeaderSync {
     #[init]
