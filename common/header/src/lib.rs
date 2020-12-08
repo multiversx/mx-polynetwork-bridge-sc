@@ -79,7 +79,7 @@ impl TopEncode for Header {
 
 impl NestedDecode for Header {
 	fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-		let mut source = ZeroCopySource::new(BoxedBytes::from(input.flush()));
+		let mut source = ZeroCopySource::new(input.flush());
 
 		let version;
 		let chain_id;

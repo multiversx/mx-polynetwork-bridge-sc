@@ -26,3 +26,7 @@ optional = true
 [dev-dependencies.elrond-wasm-debug]
 version = "0.9.6"
 path = "../../elrond-wasm-rs/elrond-wasm-debug"
+
+[dependencies.header]
+version = "0.0.0"
+path = "../common/header"
