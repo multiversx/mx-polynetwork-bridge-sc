@@ -5,15 +5,8 @@ use util::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
-pub struct ChainConfig; // ?
-
-pub struct VbftBlockInfo {
-	pub proposer: u32,
-	pub vrf_value: Vec<u8>,
-	pub vrf_proof: Vec<u8>,
-	pub last_config_block_num: u32,
-	pub new_chain_config: ChainConfig
-}
+pub mod chain_config;
+pub mod vbft_block_info;
 
 pub struct Header {
     pub version: u32,
@@ -30,10 +23,6 @@ pub struct Header {
 	pub book_keepers: Vec<PublicKey>,
 	pub sig_data: Vec<Signature>,
 	pub block_hash: H256
-}
-
-impl Header {
-    
 }
 
 impl NestedEncode for Header {
@@ -67,13 +56,6 @@ impl NestedEncode for Header {
 		dest.write(sink.get_sink().as_slice());
 
 		Ok(())
-	}
-}
-
-impl TopEncode for Header {
-	#[inline]
-	fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
-		top_encode_from_nested(self, output)
 	}
 }
 
@@ -202,6 +184,13 @@ impl NestedDecode for Header {
 				block_hash,
 			});
 		}
+	}
+}
+
+impl TopEncode for Header {
+	#[inline]
+	fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
+		top_encode_from_nested(self, output)
 	}
 }
 

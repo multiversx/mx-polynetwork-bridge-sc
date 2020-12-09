@@ -12,17 +12,10 @@ pub trait BlockHeaderSync {
         
     }
 
-    // utils
+    // endpoints
 
-    /*fn hash_raw_header(&self, header: &Header) -> Option<H256> {
-        let mut bytes = Vec::<u8>::new();
-        match header.dep_encode(&mut bytes) {
-            core::result::Result::Ok(()) => Some(self.sha256(self.sha256(bytes.as_slice()).as_bytes())),
-            core::result::Result::Err(_en_err) => None
-        }
-    }*/
+    #[endpoint(SyncGenesisHeader)]
+    fn sync_genesis_header(&self, _header: &Header) {
 
-    /*fn get_next_book_keeper(&self, pub_key_list: Vec<PublicKey>) -> (BoxArray20, Vec<Address>) {
-        
-    }*/
+    }
 }
