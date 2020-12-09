@@ -11,11 +11,4 @@ pub trait BlockHeaderSync {
     fn init(&self) {
         
     }
-
-    // endpoints
-
-    #[endpoint(SyncGenesisHeader)]
-    fn sync_genesis_header(&self, _header: &Header) {
-
-    }
 }

@@ -1,4 +1,4 @@
-use elrond_wasm::{BoxedBytes, H256, Vec};
+use elrond_wasm::{H256, Vec};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
@@ -7,6 +7,8 @@ use zero_copy_source::*;
 
 pub mod chain_config;
 pub mod vbft_block_info;
+
+use vbft_block_info::*;
 
 pub struct Header {
     pub version: u32,
@@ -18,7 +20,7 @@ pub struct Header {
     pub timestamp: u32,
     pub height: u32,
     pub consensus_data: u64,
-    pub consensus_payload: BoxedBytes, // marshalled VbftBlockInfo, if it exists
+    pub consensus_payload: VbftBlockInfo,
 	pub next_book_keeper: EthAddress,
 	pub book_keepers: Vec<PublicKey>,
 	pub sig_data: Vec<Signature>,
@@ -38,7 +40,12 @@ impl NestedEncode for Header {
 		sink.write_u32(self.timestamp);
 		sink.write_u32(self.height);
 		sink.write_u64(self.consensus_data);
-		sink.write_var_bytes(self.consensus_payload.as_slice());
+		
+		match self.consensus_payload.dep_encode(dest) {
+			Ok(()) => {},
+			Err(err) => return Err(err)
+		}
+
 		sink.write_eth_address(&self.next_book_keeper);
 		
 		sink.write_var_uint(self.book_keepers.len() as u64);
@@ -123,9 +130,9 @@ impl NestedDecode for Header {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_var_bytes() {
-			Some(val) => consensus_payload = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		match VbftBlockInfo::dep_decode(input) {
+			Ok(val) => consensus_payload = val,
+			Err(err) => return Err(err)
 		};
 
 		match source.next_eth_address() {
