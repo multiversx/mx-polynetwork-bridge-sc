@@ -23,7 +23,7 @@ impl NestedEncode for VbftBlockInfo {
 		sink.write_var_bytes(self.vrf_proof.as_slice());
 		sink.write_u32(self.last_config_block_num);
 		
-		match self.new_chain_config.dep_encode(dest) {
+		match self.new_chain_config.dep_encode(&mut sink) {
 			Ok(()) => {},
 			Err(err) => return Err(err)
 		};
@@ -64,7 +64,7 @@ impl NestedDecode for VbftBlockInfo {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match ChainConfig::dep_decode(input) {
+		match ChainConfig::dep_decode(&mut source) {
 			Ok(config) => new_chain_config = config,
 			Err(err) => return Err(err)
 		};

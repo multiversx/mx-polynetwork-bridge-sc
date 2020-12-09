@@ -3,8 +3,10 @@
 use elrond_wasm::Box;
 
 pub const ETH_ADDRESS_LEN: usize = 20;
+
 pub const POLYCHAIN_PUBKEY_LEN: usize = 67;
 pub const POLYCHAIN_SIGNATURE_LEN: usize = 65;
+pub const POLYCHAIN_EPOCH_HEIGHT: u32 = 60000;
 
 pub struct EthAddress(Box<[u8;ETH_ADDRESS_LEN]>);
 pub struct PublicKey(Box<[u8;POLYCHAIN_PUBKEY_LEN]>);

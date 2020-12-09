@@ -1,13 +1,10 @@
-use elrond_wasm::{BoxedBytes, Vec};
+use elrond_wasm::Vec;
 use elrond_wasm::elrond_codec::*;
 
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
-pub struct PeerConfig {
-	pub index: u32,
-	pub id: BoxedBytes // string in Go, but prefer byte array in Rust
-}
+use super::peer_config::*;
 
 pub struct ChainConfig {
 	pub version: u32, // software version
@@ -36,9 +33,11 @@ impl NestedEncode for ChainConfig {
 		
 		sink.write_var_uint(self.peers.len() as u64);
 		for peer in &self.peers {
-			sink.write_u32(peer.index);
-			sink.write_var_bytes(peer.id.as_slice());
-		}
+			match peer.dep_encode(&mut sink) {
+				Ok(()) => {},
+				Err(err) => return Err(err)
+			}
+		};
 
 		sink.write_var_uint(self.pos_table.len() as u64);
 		for pos in &self.pos_table {
@@ -106,22 +105,14 @@ impl NestedDecode for ChainConfig {
 		match source.next_var_uint() {
 			Some(len) => {
 				for _ in 0..len {
-					match source.next_u32() {
-						Some(index) => {
-							match source.next_var_bytes() {
-								Some(id) => peers.push(PeerConfig {
-									index,
-									id
-								}),
-								None => return Err(DecodeError::INPUT_TOO_SHORT)
-							}
-						},
-						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					match PeerConfig::dep_decode(&mut source) {
+						Ok(peer) => peers.push(peer),
+						Err(err) => return Err(err)
 					}
 				}
 			},
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		}
+		};
 
 		match source.next_var_uint() {
 			Some(len) => {

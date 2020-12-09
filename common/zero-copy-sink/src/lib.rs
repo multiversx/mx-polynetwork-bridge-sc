@@ -1,10 +1,17 @@
 #![no_std]
 
 use elrond_wasm::{Address, BoxedBytes, H256, Vec};
+use elrond_wasm::elrond_codec::*;
 use util::*;
 
 pub struct ZeroCopySink {
     sink: Vec<u8>
+}
+
+impl NestedEncodeOutput for ZeroCopySink {
+    fn write(&mut self, bytes: &[u8]) {
+        self.write_bytes(bytes);
+    }
 }
 
 // little endian encoding is used

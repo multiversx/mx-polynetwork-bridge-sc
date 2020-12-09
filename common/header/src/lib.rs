@@ -5,6 +5,7 @@ use util::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
+pub mod peer_config;
 pub mod chain_config;
 pub mod vbft_block_info;
 
@@ -23,6 +24,12 @@ pub struct Header {
 	pub book_keepers: Vec<PublicKey>,
 	pub sig_data: Vec<Signature>,
 	pub block_hash: H256
+}
+
+impl Header {
+	pub fn is_start_of_epoch(&self) -> bool {
+		self.height % POLYCHAIN_EPOCH_HEIGHT == 0
+	}
 }
 
 impl NestedEncode for Header {

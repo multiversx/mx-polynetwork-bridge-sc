@@ -1,11 +1,81 @@
 #![no_std]
 
 use elrond_wasm::{Address, BoxedBytes, H256, Vec};
+use elrond_wasm::elrond_codec::*;
+
 use util::*;
 
 pub struct ZeroCopySource {
     source: Vec<u8>,
     index: usize
+}
+
+impl NestedDecodeInput for ZeroCopySource {
+    fn remaining_len(&mut self) -> usize {
+        self.get_bytes_left()
+    }
+
+    fn read_into(&mut self, into: &mut [u8]) -> Result<(), DecodeError> {
+        if self.get_bytes_left() >= into.len() {
+        
+            for i in 0..into.len() {
+                into[i] = self.source[self.index + i];
+            }
+
+            return Ok(());
+        }
+
+        return Err(DecodeError::INPUT_TOO_SHORT)
+    }
+
+    fn read_into_or_exit<ExitCtx: Clone>(
+		&mut self,
+		into: &mut [u8],
+		c: ExitCtx,
+		exit: fn(ExitCtx, DecodeError) -> !,
+	) {
+        let result = self.read_into(into);
+
+        if result.is_err() {
+            exit(c, result.unwrap_err());
+        }
+    }
+
+    fn read_slice(&mut self, length: usize) -> Result<&[u8], DecodeError> {
+        if self.get_bytes_left() >= length {
+            let slice = &self.source[self.index..(self.index + length)];
+            self.index += length;
+
+            Ok(slice)
+        }
+        else {
+            Err(DecodeError::INPUT_TOO_SHORT)
+        }
+    }
+
+    fn read_slice_or_exit<ExitCtx: Clone>(
+		&mut self,
+		length: usize,
+		c: ExitCtx,
+		exit: fn(ExitCtx, DecodeError) -> !,
+	) -> &[u8] {
+        let result = self.read_slice(length);
+
+        if result.is_ok() {
+            result.unwrap()
+        }
+        else {
+            exit(c, result.unwrap_err());
+        }
+    }
+
+    fn flush(&mut self) -> &[u8] {
+        let src = &self.source[self.index..];
+
+        self.index = self.source.len();
+
+        src
+    }
 }
 
 // little endian encoding is used
