@@ -14,13 +14,14 @@ pub struct Header {
     pub chain_id: u64,
     pub prev_block_hash: H256,
     pub transactions_root: H256,
-    pub cross_states_root: H256,
+    pub cross_state_root: H256,
     pub block_root: H256,
     pub timestamp: u32,
     pub height: u32,
     pub consensus_data: u64,
     pub consensus_payload: BoxedBytes, // marshalled VbftBlockInfo, if it exists
 	pub next_book_keeper: EthAddress,
+
 	pub book_keepers: Vec<PublicKey>,
 	pub sig_data: Vec<Signature>,
 	pub block_hash: H256
@@ -30,23 +31,36 @@ impl Header {
 	pub fn is_start_of_epoch(&self) -> bool {
 		self.height % POLYCHAIN_EPOCH_HEIGHT == 0
 	}
+
+	pub fn get_partial_serialized(&self) -> BoxedBytes {
+		self.serialize_partial().get_sink()
+	}
 }
 
-impl NestedEncode for Header {
-	fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
+// private methods
+impl Header {
+	fn serialize_partial(&self) -> ZeroCopySink {
 		let mut sink = ZeroCopySink::new();
 
 		sink.write_u32(self.version);
 		sink.write_u64(self.chain_id);
 		sink.write_hash(&self.prev_block_hash);
 		sink.write_hash(&self.transactions_root);
-		sink.write_hash(&self.cross_states_root);
+		sink.write_hash(&self.cross_state_root);
 		sink.write_hash(&self.block_root);
 		sink.write_u32(self.timestamp);
 		sink.write_u32(self.height);
 		sink.write_u64(self.consensus_data);
 		sink.write_var_bytes(self.consensus_payload.as_slice());
 		sink.write_eth_address(&self.next_book_keeper);
+
+		sink
+	}
+}
+
+impl NestedEncode for Header {
+	fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
+		let mut sink = self.serialize_partial();
 		
 		sink.write_var_uint(self.book_keepers.len() as u64);
 		for pubkey in &self.book_keepers {
@@ -74,7 +88,7 @@ impl NestedDecode for Header {
 		let chain_id;
 		let prev_block_hash;
 		let transactions_root;
-		let cross_states_root;
+		let cross_state_root;
 		let block_root;
 		let timestamp;
 		let height;
@@ -106,7 +120,7 @@ impl NestedDecode for Header {
 		};
 
 		match source.next_hash() {
-			Some(val) => cross_states_root = val,
+			Some(val) => cross_state_root = val,
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
@@ -179,7 +193,7 @@ impl NestedDecode for Header {
 				chain_id,
 				prev_block_hash,
 				transactions_root,
-				cross_states_root,
+				cross_state_root,
 				block_root,
 				timestamp,
 				height,

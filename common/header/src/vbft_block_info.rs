@@ -11,7 +11,7 @@ pub struct VbftBlockInfo {
 	pub vrf_value: BoxedBytes,
 	pub vrf_proof: BoxedBytes,
 	pub last_config_block_num: u32,
-	pub new_chain_config: ChainConfig
+	pub new_chain_config: Option<ChainConfig>
 }
 
 impl NestedEncode for VbftBlockInfo {
@@ -22,11 +22,13 @@ impl NestedEncode for VbftBlockInfo {
 		sink.write_var_bytes(self.vrf_value.as_slice());
 		sink.write_var_bytes(self.vrf_proof.as_slice());
 		sink.write_u32(self.last_config_block_num);
-		
-		match self.new_chain_config.dep_encode(&mut sink) {
-			Ok(()) => {},
-			Err(err) => return Err(err)
-		};
+
+		if let Some(chain_config) = &self.new_chain_config {
+			match chain_config.dep_encode(&mut sink) {
+				Ok(()) => {},
+				Err(err) => return Err(err)
+			};
+		}
 
 		dest.write(sink.get_sink().as_slice());
 
@@ -65,8 +67,8 @@ impl NestedDecode for VbftBlockInfo {
 		};
 
 		match ChainConfig::dep_decode(&mut source) {
-			Ok(config) => new_chain_config = config,
-			Err(err) => return Err(err)
+			Ok(config) => new_chain_config = Some(config),
+			Err(_) => new_chain_config = None
 		};
 
 		// if there are bytes left, something went wrong
