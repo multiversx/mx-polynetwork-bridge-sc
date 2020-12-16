@@ -18,31 +18,80 @@ pub trait BlockHeaderSync {
 
     // endpoints
 
-    #[endpoint(SyncGenesisHeader)]
-    fn sync_genesis_header(&self, header: &Header) -> SCResult<()> {
+    #[endpoint(syncGenesisHeader)]
+    fn sync_genesis_header(&self, header: Header) -> SCResult<()> {
         require!(self.is_empty_genesis_header(), "Genesis header already set!");
         require!(!header.consensus_payload.is_empty(), "Invalid genesis header!");
 
-        self.set_genesis_header(header);
+        let sc_result = self.update_consensus_peer(&header);
+        if sc_result.is_ok() {
+            self.set_genesis_header(&header);
+            self.block_header_sync_event(&header);
+        }
 
-        self.update_consensus_peer(header)
+        sc_result
     }
 
-    #[endpoint(SyncBlockHeader)]
-    fn sync_block_header(&self, header: &Header) -> SCResult<()> {
+    #[endpoint(syncBlockHeader)]
+    fn sync_block_header(&self, header: Header) -> SCResult<()> {
         
         if self.is_empty_header_by_height(header.chain_id, header.height) {
-            match self.verify_header(header) {
+            match self.verify_header(&header) {
                 Ok(()) => {},
                 Err(err) => return Err(err)
             };
 
-            self.store_header(header);
-            
-            return self.update_consensus_peer(header);
+            let sc_result = self.update_consensus_peer(&header);
+            if sc_result.is_ok() {
+                self.store_header(&header);
+                self.block_header_sync_event(&header);
+            }
+
+            return sc_result;
         }
 
+        // if block exists already, no sync needed
         Ok(())
+    }
+
+    #[endpoint(getHeaderByHeight)]
+    fn get_header_by_height_endpoint(&self, chain_id: u64, height: u32) -> Option<Header> {
+        if !self.is_empty_header_by_height(chain_id, height) {
+            Some(self.get_header_by_height(chain_id, height))
+        }
+        else {
+            None
+        }
+    }
+
+    #[endpoint(verifyHeader)]
+    fn verify_header(&self, header: &Header) -> SCResult<()> {
+        let chain_id = header.chain_id;
+        let height = header.height;
+
+        let key_height = match self.find_key_height(chain_id, height) {
+            Some(k) => k,
+            None => return sc_error!("Couldn't find key height!")
+        };
+        let prev_consensus = self.get_consensus_peers(chain_id, key_height);
+
+        if header.book_keepers.len() * 3 < prev_consensus.len() * 2 {
+            return sc_error!("Header bookkeepers num must be > 2/3 of consensus num");
+        }
+
+        for bk in &header.book_keepers {
+            let key_id = HexConverter::byte_slice_to_hex(bk.as_slice());
+            
+            // if key doesn't exist, something is wrong
+            if !prev_consensus.iter().any(|p| p.id == key_id) {
+                return sc_error!("Invalid pubkey!");
+            }
+        }
+
+        let hashed_header = BoxedBytes::from(self.hash_header(header).as_bytes());
+
+        self.verify_multi_signature(&hashed_header, &header.book_keepers, 
+            header.book_keepers.len(), &header.sig_data)
     }
 
     // private
@@ -79,37 +128,8 @@ pub trait BlockHeaderSync {
     // header-related
 
     /// hashed twice, for some reason
-    fn hash_partial_header(&self, serialized_header: &BoxedBytes) -> H256 {
-        self.sha256(self.sha256(serialized_header.as_slice()).as_bytes())
-    }
-
-    fn verify_header(&self, header: &Header) -> SCResult<()> {
-        let chain_id = header.chain_id;
-        let height = header.height;
-
-        let key_height = match self.find_key_height(chain_id, height) {
-            Some(k) => k,
-            None => return sc_error!("Couldn't find key height!")
-        };
-        let prev_consensus = self.get_consensus_peers(chain_id, key_height);
-
-        if header.book_keepers.len() * 3 < prev_consensus.len() * 2 {
-            return sc_error!("Header bookkeepers num must be > 2/3 of consensus num");
-        }
-
-        for bk in &header.book_keepers {
-            let key_id = HexConverter::byte_slice_to_hex(bk.as_slice());
-            
-            // if key doesn't exist, something is wrong
-            if !prev_consensus.iter().any(|p| p.id == key_id) {
-                return sc_error!("Invalid pubkey!");
-            }
-        }
-
-        let hashed_header = BoxedBytes::from(self.hash_partial_header(&header.get_partial_serialized()).as_bytes());
-
-        self.verify_multi_signature(&hashed_header, &header.book_keepers, 
-            header.book_keepers.len(), &header.sig_data)
+    fn hash_header(&self, header: &Header) -> H256 {
+        self.sha256(self.sha256(header.get_partial_serialized().as_slice()).as_bytes())
     }
 
     fn store_header(&self, header: &Header) {
@@ -177,6 +197,11 @@ pub trait BlockHeaderSync {
 
         Ok(())
     }
+
+    // events
+
+    #[event("0x1000000000000000000000000000000000000000000000000000000000000001")]
+    fn block_header_sync_event(&self, header: &Header);
 
     // storage
 

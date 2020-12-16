@@ -1,0 +1,44 @@
+[package]
+name = "cross-chain-management"
+version = "0.0.0"
+authors = [ "dorin-iancu <dorin.iancu@elrond.com>",]
+edition = "2018"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+wasm-output-mode = [ "elrond-wasm-node",]
+
+[dependencies.elrond-wasm]
+version = "0.9.6"
+path = "../../elrond-wasm-rs/elrond-wasm"
+
+[dependencies.elrond-wasm-derive]
+version = "0.9.6"
+path = "../../elrond-wasm-rs/elrond-wasm-derive"
+
+[dependencies.elrond-wasm-node]
+version = "0.9.6"
+path = "../../elrond-wasm-rs/elrond-wasm-node"
+optional = true
+
+[dev-dependencies.elrond-wasm-debug]
+version = "0.9.6"
+path = "../../elrond-wasm-rs/elrond-wasm-debug"
+
+[dependencies.header]
+version = "0.0.0"
+path = "../common/header"
+
+[dependencies.transaction]
+version = "0.0.0"
+path = "../common/transaction"
+
+[dependencies.util]
+version = "0.0.0"
+path = "../common/util"
+
+[dependencies.block-header-sync]
+version = "0.0.0"
+path = "../BlockHeaderSync"
