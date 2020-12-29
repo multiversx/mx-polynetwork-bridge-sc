@@ -8,5 +8,9 @@ edition = "2018"
 path = "src/lib.rs"
 
 [dependencies.elrond-wasm]
-version = "0.9.6"
+version = "0.10.2"
 path = "../../../elrond-wasm-rs/elrond-wasm"
+
+[dependencies.elrond-wasm-derive]
+version = "0.10.2"
+path = "../../../elrond-wasm-rs/elrond-wasm-derive"

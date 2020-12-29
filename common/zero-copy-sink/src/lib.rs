@@ -86,7 +86,7 @@ impl ZeroCopySink {
     }
 
     pub fn write_elrond_address(&mut self, address: &Address) {
-        self.write_hash(address);
+        self.write_bytes(address.as_bytes());
     }
 
     pub fn write_hash(&mut self, hash: &H256) {

@@ -209,13 +209,16 @@ impl ZeroCopySource {
         }
     }
 
-    pub fn next_elrond_address(&mut self) -> Option<H256> {
-        self.next_hash()
-    }
-
-    pub fn next_hash(&mut self) -> Option<Address> {
+    pub fn next_elrond_address(&mut self) -> Option<Address> {
         match self.next_bytes(Address::len_bytes()) {
             Some(address_bytes) => Some(Address::from_slice(address_bytes.as_slice())),
+            None => None
+        }
+    }
+
+    pub fn next_hash(&mut self) -> Option<H256> {
+        match self.next_bytes(H256::len_bytes()) {
+            Some(hash_bytes) => Some(H256::from_slice(hash_bytes.as_slice())),
             None => None
         }
     }

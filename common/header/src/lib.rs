@@ -1,4 +1,4 @@
-use elrond_wasm::{BoxedBytes, H256, Vec};
+use elrond_wasm::{BoxedBytes, H256, Vec, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
@@ -9,6 +9,9 @@ pub mod peer_config;
 pub mod chain_config;
 pub mod vbft_block_info;
 
+derive_imports!();
+
+#[derive(TypeAbi)]
 pub struct Header {
     pub version: u32,
     pub chain_id: u64,

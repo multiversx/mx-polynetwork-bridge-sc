@@ -1,9 +1,12 @@
-use elrond_wasm::{Address, BoxedBytes, H256};
+use elrond_wasm::{Address, BoxedBytes, H256, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
+derive_imports!();
+
+#[derive(TypeAbi)]
 pub struct Transaction {
 	pub tx_hash: H256,
 	pub tx_id: u64,
