@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{Box, BoxedBytes, Vec, derive_imports};
+use elrond_wasm::{Box, derive_imports};
 
 pub const ETH_ADDRESS_LEN: usize = 20;
 
@@ -83,10 +83,10 @@ impl<'a> From<&'a [u8]> for Signature {
 
 // byte slice to hex converter
 
-pub struct HexConverter(Vec<u8>);
+pub mod hex_converter {
+    use elrond_wasm::{BoxedBytes, Vec};
 
-impl HexConverter {
-    fn half_byte_to_hex_digit(num: u8) -> u8 {
+    pub fn half_byte_to_hex_digit(num: u8) -> u8 {
         if num < 10 {
             b'0' + num
         } else {
@@ -95,8 +95,8 @@ impl HexConverter {
     }
 
     pub fn byte_to_hex(byte: u8) -> (u8, u8) {
-        let digit1 = Self::half_byte_to_hex_digit(byte >> 4);
-        let digit2 = Self::half_byte_to_hex_digit(byte & 0x0f);
+        let digit1 = half_byte_to_hex_digit(byte >> 4);
+        let digit2 = half_byte_to_hex_digit(byte & 0x0f);
 
         (digit1, digit2)
     }
@@ -105,7 +105,7 @@ impl HexConverter {
         let mut hex = Vec::new();
 
         for b in bytes {
-            let byte_hex = Self::byte_to_hex(*b);
+            let byte_hex = byte_to_hex(*b);
 
             hex.push(byte_hex.0);
             hex.push(byte_hex.1);
