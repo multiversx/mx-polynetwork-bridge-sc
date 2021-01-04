@@ -1,4 +1,4 @@
-use elrond_wasm::Vec;
+use elrond_wasm::{Vec, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
 use zero_copy_sink::*;
@@ -6,6 +6,9 @@ use zero_copy_source::*;
 
 use super::peer_config::*;
 
+derive_imports!();
+
+#[derive(TypeAbi)]
 pub struct ChainConfig {
 	pub version: u32, // software version
 	pub view: u32, // config-updated version

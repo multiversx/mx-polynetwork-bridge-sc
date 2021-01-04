@@ -1,4 +1,4 @@
-use elrond_wasm::{BoxedBytes};
+use elrond_wasm::{BoxedBytes, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
 use zero_copy_sink::*;
@@ -6,6 +6,9 @@ use zero_copy_source::*;
 
 use super::chain_config::*;
 
+derive_imports!();
+
+#[derive(TypeAbi)]
 pub struct VbftBlockInfo {
 	pub proposer: u32,
 	pub vrf_value: BoxedBytes,

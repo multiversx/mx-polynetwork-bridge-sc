@@ -2,6 +2,7 @@ use elrond_wasm::{BoxedBytes, H256, Vec, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
+use vbft_block_info::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
@@ -22,7 +23,9 @@ pub struct Header {
     pub timestamp: u32,
     pub height: u32,
     pub consensus_data: u64,
-    pub consensus_payload: BoxedBytes, // marshalled VbftBlockInfo, if it exists
+	pub consensus_payload: Option<VbftBlockInfo>, // This is serialized as: 
+		// byte(0) if value does not exist
+		// byte(1) followed by the actual value if it exists
 	pub next_book_keeper: EthAddress,
 
 	pub book_keepers: Vec<PublicKey>,
@@ -54,7 +57,15 @@ impl Header {
 		sink.write_u32(self.timestamp);
 		sink.write_u32(self.height);
 		sink.write_u64(self.consensus_data);
-		sink.write_var_bytes(self.consensus_payload.as_slice());
+
+		if let Some(payload) = &self.consensus_payload {
+			sink.write_u8(1);
+			let _ = payload.dep_encode(&mut sink);
+		}
+		else {
+			sink.write_u8(0);
+		}
+
 		sink.write_eth_address(&self.next_book_keeper);
 
 		sink
@@ -96,7 +107,7 @@ impl NestedDecode for Header {
 		let timestamp;
 		let height;
 		let consensus_data;
-		let consensus_payload;
+		let mut consensus_payload = None;
 		let next_book_keeper;
 		let mut book_keepers = Vec::new();
 		let mut sig_data = Vec::new();
@@ -147,10 +158,25 @@ impl NestedDecode for Header {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_var_bytes() {
-			Some(val) => consensus_payload = val,
+		match source.next_u8() {
+			Some(val) => {
+				if val == 0 {
+					consensus_payload = None;
+				}
+				else if val == 1 {
+					match source.next_var_bytes() {
+						Some(serialized) => { 
+							match VbftBlockInfo::dep_decode(&mut serialized.clone().as_slice()) {
+								std::result::Result::Ok(bi) => consensus_payload = Some(bi),
+								Err(err) => return Err(err)
+							}
+						},
+						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					};
+				}
+			},
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
+		}
 
 		match source.next_eth_address() {
 			Some(val) => next_book_keeper = val,

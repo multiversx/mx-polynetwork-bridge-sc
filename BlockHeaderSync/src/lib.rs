@@ -5,7 +5,6 @@ imports!();
 
 use header::*;
 use header::peer_config::*;
-use header::vbft_block_info::*;
 
 use util::*;
 
@@ -21,7 +20,7 @@ pub trait BlockHeaderSync {
     #[endpoint(syncGenesisHeader)]
     fn sync_genesis_header(&self, header: Header) -> SCResult<()> {
         require!(self.is_empty_genesis_header(), "Genesis header already set!");
-        require!(!header.consensus_payload.is_empty(), "Invalid genesis header!");
+        require!(!header.consensus_payload.is_some(), "Invalid genesis header!");
 
         let sc_result = self.update_consensus_peer(&header);
         if sc_result.is_ok() {
@@ -97,28 +96,24 @@ pub trait BlockHeaderSync {
     // private
 
     fn update_consensus_peer(&self, header: &Header) -> SCResult<()> {
-        let mut consensus_payload = header.consensus_payload.as_slice();
-        let block_info: VbftBlockInfo = match VbftBlockInfo::dep_decode(&mut consensus_payload) {
-            core::result::Result::Ok(bi) => bi,
-            core::result::Result::Err(_) => return sc_error!("Error decoding block info!")
-        };
+        if let Some(consensus_payload) = &header.consensus_payload {
+            if let Some(chain_config) = &consensus_payload.new_chain_config {
 
-        if let Some(chain_config) = block_info.new_chain_config {
+                let chain_id = header.chain_id;
+                let height = header.height;
 
-            let chain_id = header.chain_id;
-            let height = header.height;
+                // update key heights
+                let mut key_heights = self.get_key_height_list(chain_id);
+                key_heights.push(height);
+                self.set_key_height_list(chain_id, &key_heights);
 
-            // update key heights
-            let mut key_heights = self.get_key_height_list(chain_id);
-            key_heights.push(height);
-            self.set_key_height_list(chain_id, &key_heights);
-
-            // update consensus peer list
-            if !chain_config.peers.is_empty() {
-                self.set_consensus_peers(chain_id, height, &chain_config.peers);
-            }
-            else {
-                return sc_error!("Consensus peer list is empty!")
+                // update consensus peer list
+                if !chain_config.peers.is_empty() {
+                    self.set_consensus_peers(chain_id, height, &chain_config.peers);
+                }
+                else {
+                    return sc_error!("Consensus peer list is empty!")
+                }
             }
         }
 
