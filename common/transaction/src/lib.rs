@@ -14,7 +14,7 @@ pub struct Transaction {
 	pub to_chain_id: u64,
 	pub to_contract_address: Address,
 	pub method_name: BoxedBytes,
-	pub method_args: BoxedBytes
+	pub method_args: BoxedBytes // serialized arguments, separated by '@'
 }
 
 impl Transaction {
@@ -101,21 +101,15 @@ impl NestedDecode for Transaction {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		// if there are bytes left, something went wrong
-		if source.get_bytes_left() > 0 {
-			return Err(DecodeError::INPUT_TOO_LONG);
-		}
-		else {
-			return Ok(Transaction {
-				tx_hash,
-				tx_id,
-				from_contract_address,
-				to_chain_id,
-				to_contract_address,
-				method_name,
-				method_args
-			});
-		}
+		return Ok(Transaction {
+			tx_hash,
+			tx_id,
+			from_contract_address,
+			to_chain_id,
+			to_contract_address,
+			method_name,
+			method_args
+		});
 	}
 }
 
