@@ -6,10 +6,32 @@ use zero_copy_source::*;
 
 derive_imports!();
 
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Debug, PartialEq)]
 pub struct PeerConfig {
 	pub index: u32,
 	pub id: BoxedBytes // string in Go, but prefer byte array in Rust
+}
+
+impl PeerConfig {
+	pub fn decode_from_source(source: &mut ZeroCopySource) -> Result<Self, DecodeError> {
+		let index;
+        let id;
+
+		match source.next_u32() {
+			Some(val) => index = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_var_bytes() {
+            Some(val) => id = val,
+            None => return Err(DecodeError::INPUT_TOO_SHORT)
+        }
+
+		return Ok(PeerConfig {
+            index,
+            id
+		});
+	}
 }
 
 impl NestedEncode for PeerConfig {
@@ -29,29 +51,7 @@ impl NestedDecode for PeerConfig {
 	fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
 		let mut source = ZeroCopySource::new(input.flush());
 		
-        let index;
-        let id;
-
-		match source.next_u32() {
-			Some(val) => index = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_var_bytes() {
-            Some(val) => id = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT)
-        }
-
-		// if there are bytes left, something went wrong
-		if source.get_bytes_left() > 0 {
-			return Err(DecodeError::INPUT_TOO_LONG);
-		}
-		else {
-			return Ok(PeerConfig {
-                index,
-                id
-			});
-		}
+        Self::decode_from_source(&mut source)
 	}
 }
 

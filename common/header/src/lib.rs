@@ -12,7 +12,7 @@ pub mod vbft_block_info;
 
 derive_imports!();
 
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Debug, PartialEq)]
 pub struct Header {
     pub version: u32,
     pub chain_id: u64,
@@ -40,6 +40,137 @@ impl Header {
 
 	pub fn get_partial_serialized(&self) -> BoxedBytes {
 		self.serialize_partial().get_sink()
+	}
+
+	pub fn decode_from_source(source: &mut ZeroCopySource) -> Result<Self, DecodeError> {
+		let version;
+		let chain_id;
+		let prev_block_hash;
+		let transactions_root;
+		let cross_state_root;
+		let block_root;
+		let timestamp;
+		let height;
+		let consensus_data;
+		let consensus_payload;
+		let next_book_keeper;
+		let mut book_keepers = Vec::new();
+		let mut sig_data = Vec::new();
+		let block_hash;
+
+		match source.next_u32() {
+			Some(val) => version = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u64() {
+			Some(val) => chain_id = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => prev_block_hash = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => transactions_root = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => cross_state_root = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_hash() {
+			Some(val) => block_root = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u32() {
+			Some(val) => timestamp = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u32() {
+			Some(val) => height = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u64() {
+			Some(val) => consensus_data = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_u8() {
+			Some(val) => {
+				if val == 0 {
+					consensus_payload = None;
+				}
+				else if val == 1 {
+					match VbftBlockInfo::decode_from_source(source) {
+						Ok(bi) => consensus_payload = Some(bi),
+						Err(err) => return Err(err)
+					}
+				}
+				else {
+					return Err(DecodeError::INVALID_VALUE);
+				}
+			},
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		}
+
+		match source.next_eth_address() {
+			Some(val) => next_book_keeper = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		match source.next_var_uint() {
+			Some(len) => {
+				for _ in 0..len {
+					match source.next_public_key() {
+						Some(val) => book_keepers.push(val),
+						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					}
+				}
+			},
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		}
+
+		match source.next_var_uint() {
+			Some(len) => {
+				for _ in 0..len {
+					match source.next_signature() {
+						Some(val) => sig_data.push(val),
+						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					}
+				}
+			},
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		}
+
+		match source.next_hash() {
+			Some(val) => block_hash = val,
+			None => return Err(DecodeError::INPUT_TOO_SHORT)
+		};
+
+		Ok(Header {
+			version,
+			chain_id,
+			prev_block_hash,
+			transactions_root,
+			cross_state_root,
+			block_root,
+			timestamp,
+			height,
+			consensus_data,
+			consensus_payload,
+			next_book_keeper,
+			book_keepers,
+			sig_data,
+			block_hash,
+		})
 	}
 }
 
@@ -98,142 +229,7 @@ impl NestedDecode for Header {
 	fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
 		let mut source = ZeroCopySource::new(input.flush());
 
-		let version;
-		let chain_id;
-		let prev_block_hash;
-		let transactions_root;
-		let cross_state_root;
-		let block_root;
-		let timestamp;
-		let height;
-		let consensus_data;
-		let mut consensus_payload = None;
-		let next_book_keeper;
-		let mut book_keepers = Vec::new();
-		let mut sig_data = Vec::new();
-		let block_hash;
-
-		match source.next_u32() {
-			Some(val) => version = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_u64() {
-			Some(val) => chain_id = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_hash() {
-			Some(val) => prev_block_hash = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_hash() {
-			Some(val) => transactions_root = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_hash() {
-			Some(val) => cross_state_root = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_hash() {
-			Some(val) => block_root = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_u32() {
-			Some(val) => timestamp = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_u32() {
-			Some(val) => height = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_u64() {
-			Some(val) => consensus_data = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_u8() {
-			Some(val) => {
-				if val == 0 {
-					consensus_payload = None;
-				}
-				else if val == 1 {
-					match source.next_var_bytes() {
-						Some(serialized) => { 
-							match VbftBlockInfo::dep_decode(&mut serialized.clone().as_slice()) {
-								std::result::Result::Ok(bi) => consensus_payload = Some(bi),
-								Err(err) => return Err(err)
-							}
-						},
-						None => return Err(DecodeError::INPUT_TOO_SHORT)
-					};
-				}
-			},
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		}
-
-		match source.next_eth_address() {
-			Some(val) => next_book_keeper = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		match source.next_var_uint() {
-			Some(len) => {
-				for _ in 0..len {
-					match source.next_public_key() {
-						Some(val) => book_keepers.push(val),
-						None => return Err(DecodeError::INPUT_TOO_SHORT)
-					}
-				}
-			},
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		}
-
-		match source.next_var_uint() {
-			Some(len) => {
-				for _ in 0..len {
-					match source.next_signature() {
-						Some(val) => sig_data.push(val),
-						None => return Err(DecodeError::INPUT_TOO_SHORT)
-					}
-				}
-			},
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		}
-
-		match source.next_hash() {
-			Some(val) => block_hash = val,
-			None => return Err(DecodeError::INPUT_TOO_SHORT)
-		};
-
-		// if there are bytes left, something went wrong
-		if source.get_bytes_left() > 0 {
-			return Err(DecodeError::INPUT_TOO_LONG);
-		}
-		else {
-			return Ok(Header {
-				version,
-				chain_id,
-				prev_block_hash,
-				transactions_root,
-				cross_state_root,
-				block_root,
-				timestamp,
-				height,
-				consensus_data,
-				consensus_payload,
-				next_book_keeper,
-				book_keepers,
-				sig_data,
-				block_hash,
-			});
-		}
+		Self::decode_from_source(&mut source)
 	}
 }
 

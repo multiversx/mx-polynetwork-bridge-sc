@@ -5,6 +5,7 @@ use elrond_wasm::elrond_codec::*;
 
 use util::*;
 
+#[derive(Clone)]
 pub struct ZeroCopySource {
     source: Vec<u8>,
     index: usize
@@ -145,7 +146,7 @@ impl ZeroCopySource {
             let b0 = self.next_u8().unwrap() as u16;
             let b1 = self.next_u8().unwrap() as u16;
 
-            Some((b1 << 8) & b0)
+            Some((b1 << 8) | b0)
         }
         else {
             None
@@ -157,7 +158,7 @@ impl ZeroCopySource {
             let b10 = self.next_u16().unwrap() as u32;
             let b32 = self.next_u16().unwrap() as u32;
 
-            Some((b32 << 16) & b10)
+            Some((b32 << 16) | b10)
         }
         else {
             None
@@ -169,7 +170,7 @@ impl ZeroCopySource {
             let b3210 = self.next_u32().unwrap() as u64;
             let b7654 = self.next_u32().unwrap() as u64;
 
-            Some((b7654 << 32) & b3210)
+            Some((b7654 << 32) | b3210)
         }
         else {
             None

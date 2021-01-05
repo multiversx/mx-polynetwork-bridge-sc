@@ -8,7 +8,7 @@ use super::peer_config::*;
 
 derive_imports!();
 
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Debug, PartialEq)]
 pub struct ChainConfig {
 	pub version: u32, // software version
 	pub view: u32, // config-updated version
@@ -22,43 +22,8 @@ pub struct ChainConfig {
 	pub max_block_change_view: u32
 }
 
-impl NestedEncode for ChainConfig {
-	fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
-		let mut sink = ZeroCopySink::new();
-
-		sink.write_u32(self.version);
-		sink.write_u32(self.view);
-		sink.write_u32(self.network_size);
-		sink.write_u32(self.consensus_quorum);
-		sink.write_u64(self.block_msg_delay);
-		sink.write_u64(self.hash_msg_delay);
-		sink.write_u64(self.peer_handshake_timeout);
-		
-		sink.write_var_uint(self.peers.len() as u64);
-		for peer in &self.peers {
-			match peer.dep_encode(&mut sink) {
-				Ok(()) => {},
-				Err(err) => return Err(err)
-			}
-		};
-
-		sink.write_var_uint(self.pos_table.len() as u64);
-		for pos in &self.pos_table {
-			sink.write_u32(*pos);
-		}
-
-		sink.write_u32(self.max_block_change_view);
-
-		dest.write(sink.get_sink().as_slice());
-
-		Ok(())
-	}
-}
-
-impl NestedDecode for ChainConfig {
-	fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-		let mut source = ZeroCopySource::new(input.flush());
-		
+impl ChainConfig {
+	pub fn decode_from_source(source: &mut ZeroCopySource) -> Result<Self, DecodeError> {
 		let version;
 		let view;
 		let network_size;
@@ -108,7 +73,7 @@ impl NestedDecode for ChainConfig {
 		match source.next_var_uint() {
 			Some(len) => {
 				for _ in 0..len {
-					match PeerConfig::dep_decode(&mut source) {
+					match PeerConfig::decode_from_source(source) {
 						Ok(peer) => peers.push(peer),
 						Err(err) => return Err(err)
 					}
@@ -134,24 +99,59 @@ impl NestedDecode for ChainConfig {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		// if there are bytes left, something went wrong
-		if source.get_bytes_left() > 0 {
-			return Err(DecodeError::INPUT_TOO_LONG);
+		return Ok(ChainConfig {
+			version,
+			view,
+			network_size,
+			consensus_quorum,
+			block_msg_delay,
+			hash_msg_delay,
+			peer_handshake_timeout,
+			peers,
+			pos_table,
+			max_block_change_view,
+		});
+	}
+}
+
+impl NestedEncode for ChainConfig {
+	fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
+		let mut sink = ZeroCopySink::new();
+
+		sink.write_u32(self.version);
+		sink.write_u32(self.view);
+		sink.write_u32(self.network_size);
+		sink.write_u32(self.consensus_quorum);
+		sink.write_u64(self.block_msg_delay);
+		sink.write_u64(self.hash_msg_delay);
+		sink.write_u64(self.peer_handshake_timeout);
+		
+		sink.write_var_uint(self.peers.len() as u64);
+		for peer in &self.peers {
+			match peer.dep_encode(&mut sink) {
+				Ok(()) => {},
+				Err(err) => return Err(err)
+			}
+		};
+
+		sink.write_var_uint(self.pos_table.len() as u64);
+		for pos in &self.pos_table {
+			sink.write_u32(*pos);
 		}
-		else {
-			return Ok(ChainConfig {
-				version,
-				view,
-				network_size,
-				consensus_quorum,
-				block_msg_delay,
-				hash_msg_delay,
-				peer_handshake_timeout,
-				peers,
-				pos_table,
-				max_block_change_view,
-			});
-		}
+
+		sink.write_u32(self.max_block_change_view);
+
+		dest.write(sink.get_sink().as_slice());
+
+		Ok(())
+	}
+}
+
+impl NestedDecode for ChainConfig {
+	fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
+		let mut source = ZeroCopySource::new(input.flush());
+		
+		Self::decode_from_source(&mut source)
 	}
 }
 

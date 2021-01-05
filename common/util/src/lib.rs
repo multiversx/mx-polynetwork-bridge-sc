@@ -10,12 +10,12 @@ pub const POLYCHAIN_EPOCH_HEIGHT: u32 = 60000;
 
 derive_imports!();
 
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Debug, PartialEq)]
 pub struct EthAddress(Box<[u8; ETH_ADDRESS_LEN]>);
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Debug, PartialEq)]
 pub struct PublicKey(Box<[u8; POLYCHAIN_PUBKEY_LEN]>);
 
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Debug, PartialEq)]
 pub struct Signature(Box<[u8; POLYCHAIN_SIGNATURE_LEN]>);
 
 impl EthAddress {
