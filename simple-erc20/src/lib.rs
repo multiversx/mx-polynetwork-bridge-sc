@@ -53,20 +53,15 @@ pub trait SimpleErc20Token {
 	#[init]
 	fn init(&self) {}
 
-	#[endpoint(createInitialTokens)]
-	fn create_initial_tokens(&self, total_supply: BigUint) -> SCResult<()> {
+	// Should be called after init
+	// Normally, this could all be done in the init function,
+	// but we'll keep it separate for consistency with the esdt contract
+	#[endpoint(mintInitialTokens)]
+	fn mint_initial_tokens(&self, total_supply: BigUint) -> SCResult<()> {
 		only_owner!(self, "only owner may call this function!");
 		require!(self.get_total_supply() == 0, "Initial tokens already created!");
 
-		let creator = self.get_caller();
-
-		// save total supply
-		self.set_total_supply(&total_supply);
-
-		// deployer initially receives the total supply
-		let mut creator_balance = self.get_token_balance(&creator);
-		creator_balance += total_supply;
-		self.set_token_balance(&creator, &creator_balance);
+		self.mint(&total_supply);
 
 		Ok(())
 	}
