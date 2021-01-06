@@ -1,6 +1,8 @@
 #![no_std]
 #![allow(clippy::string_lit_as_bytes)]
 
+use elrond_wasm::only_owner;
+
 imports!();
 
 #[elrond_wasm_derive::contract(SimpleErc20TokenImpl)]
@@ -46,18 +48,27 @@ pub trait SimpleErc20Token {
 
 	/// Constructor, is called immediately after the contract is created
 	/// Will set the fixed global token supply and give all the supply to the creator.
+
 	/// This should be deployed by the CrossChainManagement SC
 	#[init]
-	fn init(&self, total_supply: &BigUint) {
+	fn init(&self) {}
+
+	#[endpoint(createInitialTokens)]
+	fn create_initial_tokens(&self, total_supply: BigUint) -> SCResult<()> {
+		only_owner!(self, "only owner may call this function!");
+		require!(self.get_total_supply() == 0, "Initial tokens already created!");
+
 		let creator = self.get_caller();
 
 		// save total supply
-		self.set_total_supply(total_supply);
+		self.set_total_supply(&total_supply);
 
 		// deployer initially receives the total supply
 		let mut creator_balance = self.get_token_balance(&creator);
 		creator_balance += total_supply;
 		self.set_token_balance(&creator, &creator_balance);
+
+		Ok(())
 	}
 
 	/// This method is private, deduplicates logic from transfer and transferFrom.
