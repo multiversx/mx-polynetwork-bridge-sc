@@ -85,8 +85,8 @@ pub trait SimpleEsdt {
 	// mint more tokens
 	#[endpoint]
 	fn mint(&self, amount: &BigUint) -> SCResult<()> {
-		require!(self.get_caller() == self.get_cross_chain_management_contract_address(), 
-			"Only the Cross Chain Management SC may call this function");
+		require!(self.get_caller() == self.get_owner_address(), 
+			"Only the owner may call this function");
 
 		let mut tokens_left = self.get_tokens_left();
 		tokens_left += amount;
