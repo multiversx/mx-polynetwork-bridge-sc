@@ -9,6 +9,12 @@ imports!();
 pub trait SimpleErc20Token {
 	// STORAGE
 
+	#[storage_get("crossChainManagementContractAddress")]
+	fn get_cross_chain_management_contract_address(&self) -> Address;
+
+	#[storage_set("crossChainManagementContractAddress")]
+	fn set_cross_chain_management_contract_address(&self, address: &Address);
+
 	/// Total number of tokens in existence.
 	#[view(totalSupply)]
 	#[storage_get("total_supply")]
@@ -47,11 +53,10 @@ pub trait SimpleErc20Token {
 	// FUNCTIONALITY
 
 	/// Constructor, is called immediately after the contract is created
-	/// Will set the fixed global token supply and give all the supply to the creator.
-
-	/// This should be deployed by the CrossChainManagement SC
 	#[init]
-	fn init(&self) {}
+	fn init(&self, cross_chain_management_address: Address) {
+		self.set_cross_chain_management_contract_address(&cross_chain_management_address);
+	}
 
 	// Should be called after init
 	// Normally, this could all be done in the init function,
@@ -61,9 +66,7 @@ pub trait SimpleErc20Token {
 		only_owner!(self, "only owner may call this function!");
 		require!(self.get_total_supply() == 0, "Initial tokens already created!");
 
-		self.mint(&total_supply);
-
-		Ok(())
+		self.mint(&total_supply)
 	}
 
 	/// This method is private, deduplicates logic from transfer and transferFrom.
@@ -77,13 +80,7 @@ pub trait SimpleErc20Token {
 		{
 			let mut sender_balance = self.get_token_balance(&sender);
 			if amount > sender_balance {
-				if self.get_caller() != self.get_owner_address() {
-					return sc_error!("insufficient funds");
-				}
-				else {
-					let tokens_needed = &amount - &sender_balance;
-					self.mint(&tokens_needed);
-				}
+				return sc_error!("insufficient funds");
 			}
 
 			sender_balance -= &amount;
@@ -165,18 +162,22 @@ pub trait SimpleErc20Token {
 		Ok(())
 	}
 
-	// mint more tokens and assign them to the owner
-	// only called when tokens run out for the owner (CrossChainManagement SC)
-	fn mint(&self, amount: &BigUint) {
-		let owner = self.get_owner_address();
+	// mint more tokens and assign them to the cross chain contract
+	#[endpoint]
+	fn mint(&self, amount: &BigUint) -> SCResult<()> {
+		only_owner!(self, "only owner may call this function!");
+
+		let contract = self.get_cross_chain_management_contract_address();
 		let mut total_supply = self.get_total_supply();
-		let mut total_owner = self.get_token_balance(&owner);
+		let mut total_contract = self.get_token_balance(&contract);
 
 		total_supply += amount;
-		total_owner += amount;
+		total_contract += amount;
 
 		self.set_total_supply(&total_supply);
-		self.set_token_balance(&owner, &total_owner);
+		self.set_token_balance(&contract, &total_contract);
+
+		Ok(())
 	}
 
 	// EVENTS
