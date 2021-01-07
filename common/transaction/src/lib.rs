@@ -1,3 +1,5 @@
+#![no_std]
+
 use elrond_wasm::{Address, BoxedBytes, H256, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
