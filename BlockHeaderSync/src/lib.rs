@@ -25,6 +25,8 @@ pub trait BlockHeaderSync {
         let sc_result = self.update_consensus_peer(&header);
         if sc_result.is_ok() {
             self.set_genesis_header(&header);
+            self.store_header(&header);
+            
             self.block_header_sync_event(&header);
         }
 
