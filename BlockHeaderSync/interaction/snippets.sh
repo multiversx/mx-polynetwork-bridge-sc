@@ -31,12 +31,3 @@ verifyHeader() {
 getHeaderByHeight() {
     erdpy --verbose contract query ${ADDRESS} --function="getHeaderByHeight" --arguments 0x0000000000000000 0x00000000 --proxy=${PROXY}
 }
-
-# add() {
-#     read -p "Enter number: " NUMBER
-#     erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${ALICE} --gas-limit=5000000 --function="add" --arguments ${NUMBER} --send --proxy=${PROXY} --chain=T
-# }
-
-# getSum() {
-#     erdpy --verbose contract query ${ADDRESS} --function="getSum" --proxy=${PROXY}
-# }

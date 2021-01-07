@@ -16,7 +16,7 @@ pub struct Transaction {
 	pub to_chain_id: u64,
 	pub to_contract_address: Address,
 	pub method_name: BoxedBytes,
-	pub method_args: BoxedBytes // serialized arguments, separated by '@'
+	pub method_args: Vec<BoxedBytes>,
 }
 
 impl Transaction {
@@ -34,7 +34,11 @@ impl Transaction {
 		sink.write_u64(self.to_chain_id);
 		sink.write_elrond_address(&self.to_contract_address);
 		sink.write_var_bytes(self.method_name.as_slice());
-		sink.write_var_bytes(self.method_args.as_slice());
+
+		sink.write_var_uint(self.method_args.len() as u64);
+		for arg in &self.method_args {
+			sink.write_var_bytes(arg.as_slice());	
+		}
 
 		sink
 	}
@@ -66,7 +70,7 @@ impl NestedDecode for Transaction {
 		let to_chain_id;
 		let to_contract_address;
 		let method_name;
-		let method_args;
+		let mut method_args = Vec::new();
 
 		match source.next_hash() {
 			Some(val) => tx_hash = val,
@@ -98,8 +102,15 @@ impl NestedDecode for Transaction {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_var_bytes() {
-			Some(val) => method_args = val,
+		match source.next_var_uint() {
+			Some(len) => {
+				for _ in 0..len {
+					match source.next_var_bytes() {
+						Some(arg) => method_args.push(arg),
+						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					}
+				}
+			},
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
@@ -110,7 +121,7 @@ impl NestedDecode for Transaction {
 			to_chain_id,
 			to_contract_address,
 			method_name,
-			method_args
+			method_args,
 		});
 	}
 }
