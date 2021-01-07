@@ -53,10 +53,20 @@ pub trait BlockHeaderSync {
         Ok(())
     }
 
-    #[endpoint(getHeaderByHeight)]
+    #[view(getHeaderByHeight)]
     fn get_header_by_height_endpoint(&self, chain_id: u64, height: u32) -> Option<Header> {
         if !self.is_empty_header_by_height(chain_id, height) {
             Some(self.get_header_by_height(chain_id, height))
+        }
+        else {
+            None
+        }
+    }
+
+    #[view(getHeaderByHash)]
+    fn get_header_by_hash_endpoint(&self, chain_id: u64, hash: &H256) -> Option<Header> {
+        if !self.is_empty_header_by_hash(chain_id, hash) {
+            Some(self.get_header_by_hash(chain_id, hash))
         }
         else {
             None
