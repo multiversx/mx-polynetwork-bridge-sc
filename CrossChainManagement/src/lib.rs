@@ -200,6 +200,7 @@ pub trait CrossChainManagement {
         Ok(())
     }
 
+    #[endpoint(completeTransaction)]
     fn complete_transaction(&self, tx_id: u64) -> SCResult<()> {
         require!(
             !self.is_empty_token_management_contract_address(),
