@@ -1,11 +1,15 @@
 #![no_std]
 #![allow(clippy::string_lit_as_bytes)]
 
-use elrond_wasm::{HexCallDataSerializer, only_owner};
+use elrond_wasm::{HexCallDataSerializer, only_owner, imports};
+
+use transaction::TransactionStatus;
 
 imports!();
 
 const ESDT_TRANSFER_STRING: &[u8] = b"ESDTTransfer";
+
+// TODO: Mint tokens in the contract in a certain bulk amount
 
 #[elrond_wasm_derive::contract(SimpleEsdtImpl)]
 pub trait SimpleEsdt {
@@ -17,17 +21,6 @@ pub trait SimpleEsdt {
 	}
 
 	// endpoints - owner-only
-
-	// Take care when calling this, once a name is set, it can't be overwritten
-	#[endpoint(setTokenNameForChain)]
-	fn set_token_name_for_chain_endpoint(&self, chain_id: u64, token_name: BoxedBytes) -> SCResult<()> {
-		only_owner!(self, "Only owner may call this function");
-		require!(self.is_empty_token_name_for_chain(chain_id), "Can't overwrite existing token name!");
-
-		self.set_token_name_for_chain(chain_id, &token_name);
-
-		Ok(())
-	}
 
 	#[endpoint(supplyTokens)]
 	fn supply_tokens(&self) -> SCResult<()> {
@@ -44,33 +37,56 @@ pub trait SimpleEsdt {
 	// endpoints - CrossChainManagement contract - only
 
 	#[endpoint(transferEsdtToAccount)]
-	fn transfer_esdt_to_account_endpoint(&self, chain_id: u64, amount: BigUint, to: Address) -> SCResult<()> {
+	fn transfer_esdt_to_account_endpoint(&self, token_name: BoxedBytes, amount: BigUint, to: Address,
+		poly_tx_hash: H256) -> SCResult<()> {
+
 		require!(self.get_caller() == self.get_cross_chain_management_contract_address(), 
 			"Only the cross chain management contract may call this function");
 
-		let token_name = self.get_token_name_for_chain(chain_id);
 		let total_wrapped = self.get_total_wrapped_remaining(&token_name);
 
 		require!(total_wrapped >= amount, "Contract does not have enough tokens");
 
-		self.transfer_esdt_to_account(&token_name, &amount, &to);
+		require!(self.get_tx_status(&poly_tx_hash) == TransactionStatus::None, "Transaction was already processed");
+
+		// a send_tx can not fail and has no callback, so we preemptively set it as executed
+		self.set_tx_status(&poly_tx_hash, TransactionStatus::Executed);
+
+		if token_name != self.get_wrapped_egld_token_name() {
+			self.transfer_esdt_to_account(&token_name, &amount, &to);
+		}
+		else { // automatically unwrap before sending if the token is wrapped eGLD
+			self.transfer_egld_to_account(&to, &amount);
+		}
 
 		Ok(())
 	}
 
 	#[endpoint(transferEsdtToContract)]
-	fn transfer_esdt_to_contract_endpoint(&self, chain_id: u64, amount: BigUint, to: Address, 
-		func_name: BoxedBytes, args: Vec<BoxedBytes>) -> SCResult<()> {
+	fn transfer_esdt_to_contract_endpoint(&self, token_name: BoxedBytes, amount: BigUint, to: Address, 
+		func_name: BoxedBytes, args: Vec<BoxedBytes>, poly_tx_hash: H256) -> SCResult<()> {
 	
 		require!(self.get_caller() == self.get_cross_chain_management_contract_address(), 
 			"Only the cross chain management contract may call this function");
 
-		let token_name = self.get_token_name_for_chain(chain_id);
 		let total_wrapped = self.get_total_wrapped_remaining(&token_name);
 
 		require!(total_wrapped >= amount, "Contract does not have enough tokens");
 
-		self.transfer_esdt_to_contract(&token_name, &amount, &to, &func_name, &args);
+		require!(self.get_tx_status(&poly_tx_hash) == TransactionStatus::None, "Transaction was already processed");
+
+		// setting the status to Pending so it can't be executed multiple times before the async-call callBack is reached
+		self.set_tx_status(&poly_tx_hash, TransactionStatus::Pending);
+
+		// save the poly_tx_hash to be used in the callback
+		self.set_temporary_storage_poly_tx_hash(&self.get_tx_hash(), &poly_tx_hash);
+
+		if token_name != self.get_wrapped_egld_token_name() {
+			self.transfer_esdt_to_contract(&token_name, &amount, &to, &func_name, &args);
+		}
+		else { // automatically unwrap before sending if the token is wrapped eGLD
+			self.transfer_egld_to_contract(&to, &amount, &func_name, &args);
+		}
 
 		Ok(())
 	}
@@ -144,7 +160,23 @@ pub trait SimpleEsdt {
 
 		self.substract_total_wrapped(esdt_token_name, amount);
 
-		self.async_call(&to, &BigUint::zero(), serializer.as_slice());
+		self.async_call(to, &BigUint::zero(), serializer.as_slice());
+	}
+
+	fn transfer_egld_to_account(&self, to: &Address, amount: &BigUint) {
+		self.send_tx(&to, &amount, b"transfer");
+	}
+
+	fn transfer_egld_to_contract(&self, to: &Address, amount: &BigUint, 
+		func_name: &BoxedBytes, args: &Vec<BoxedBytes>) {
+
+		let mut serializer = HexCallDataSerializer::new(func_name.as_slice());
+
+		for arg in args {
+			serializer.push_argument_bytes(arg.as_slice());
+		}
+
+		self.async_call(to, amount, serializer.as_slice());
 	}
 
 	fn add_total_wrapped(&self, esdt_token_name: &BoxedBytes, amount: &BigUint) {
@@ -159,6 +191,36 @@ pub trait SimpleEsdt {
 		self.set_total_wrapped_remaining(esdt_token_name, &total_wrapped);
 	}
 
+	// callbacks
+
+	#[callback_raw]
+	fn callback_raw(&self, result: Vec<Vec<u8>>) {
+		let error_code_vec = &result[0];
+		let original_tx_hash = self.get_tx_hash();
+		let poly_tx_hash = self.get_temporary_storage_poly_tx_hash(&original_tx_hash);
+
+		// Transaction must be in Pending status, otherwise, something went wrong
+		if self.get_tx_status(&poly_tx_hash) == TransactionStatus::Pending {
+			match u32::dep_decode(&mut error_code_vec.as_slice()) {
+				core::result::Result::Ok(err_code) => {
+					// error code 0 means success
+					if err_code == 0 {
+						self.set_tx_status(&poly_tx_hash, TransactionStatus::Executed);
+					}
+					else {
+						self.set_tx_status(&poly_tx_hash, TransactionStatus::Rejected);
+					}
+				},
+				// we should never get a decode error here, but we'll set the tx to rejected if this somehow happens
+				core::result::Result::Err(_) => {
+					self.set_tx_status(&poly_tx_hash, TransactionStatus::Rejected);
+				}
+			}
+		}
+
+		self.clear_temporary_storage_poly_tx_hash(&original_tx_hash);
+	}
+
 	// STORAGE
 
 	// 1 eGLD = 1 wrapped eGLD, and they are interchangeable through this contract
@@ -170,18 +232,6 @@ pub trait SimpleEsdt {
 	#[storage_set("wrappedEgldTokenName")]
 	fn set_wrapped_egld_token_name(&self, token_name: &BoxedBytes);
 
-	// Each chain will have its own token. New types of tokens will be issued/minted by the owner
-
-	#[view(getTokenNameForChain)]
-	#[storage_get("tokenNameForChain")]
-	fn get_token_name_for_chain(&self, chain_id: u64) -> BoxedBytes;
-
-	#[storage_set("tokenNameForChain")]
-	fn set_token_name_for_chain(&self, chain_id: u64, token_name: &BoxedBytes);
-
-	#[storage_is_empty("tokenNameForChain")]
-	fn is_empty_token_name_for_chain(&self, chain_id: u64) -> bool;
-
 	// The total remaining wrapped tokens of each type owned by this SC. Stored so we don't have to query everytime.
 
 	#[view(getTotalWrapped)]
@@ -191,11 +241,33 @@ pub trait SimpleEsdt {
 	#[storage_set("totalWrappedRemaining")]
 	fn set_total_wrapped_remaining(&self, token_name: &BoxedBytes , total_wrapped: &BigUint);
 	
-	// ---
+	// cross chain management
 
 	#[storage_get("crossChainManagementContractAddress")]
 	fn get_cross_chain_management_contract_address(&self) -> Address;
 
 	#[storage_set("crossChainManagementContractAddress")]
 	fn set_cross_chain_management_contract_address(&self, address: &Address);
+
+	// tx status
+
+	#[view(getTxStatus)]
+	#[storage_get("txStatus")]
+	fn get_tx_status(&self, poly_tx_hash: &H256) -> TransactionStatus;
+
+	#[storage_set("txStatus")]
+	fn set_tx_status(&self, poly_tx_hash: &H256, status: TransactionStatus);
+
+	// temporary storage for the poly_tx_hash, which is NOT the same as original_tx_hash
+	// original_tx_hash is what you get when you call self.get_tx_hash() in the api
+	// poly_tx_hash is the hash of the poly transaction
+
+	#[storage_get("temporaryStoragePolyTxHash")]
+	fn get_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256) -> H256;
+
+	#[storage_set("temporaryStoragePolyTxHash")]
+	fn set_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256, poly_tx_hash: &H256);
+
+	#[storage_clear("temporaryStoragePolyTxHash")]
+	fn clear_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256);
 }

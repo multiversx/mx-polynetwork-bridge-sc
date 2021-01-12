@@ -8,6 +8,15 @@ use zero_copy_source::*;
 
 derive_imports!();
 
+#[derive(NestedDecode, NestedEncode, TopDecode, TopEncode, TypeAbi, PartialEq)]
+pub enum TransactionStatus {
+	None,
+	Pending,
+	InProgress,
+	Executed,
+	Rejected,
+}
+
 #[derive(TypeAbi)]
 pub struct Transaction {
 	pub tx_hash: H256,

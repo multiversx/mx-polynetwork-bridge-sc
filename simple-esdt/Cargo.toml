@@ -11,6 +11,10 @@ path = "src/lib.rs"
 [features]
 wasm-output-mode = ["elrond-wasm-node"]
 
+[dependencies.transaction]
+version = "0.0.0"
+path = "../common/transaction"
+
 [dependencies.elrond-wasm]
 version = "0.10.3"
 path = "../../elrond-wasm-rs/elrond-wasm"
