@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{imports, only_owner, ArgBuffer};
+use elrond_wasm::{ArgBuffer, HexCallDataSerializer, imports, only_owner};
 use header::*;
 use transaction::*;
 
@@ -150,21 +150,15 @@ pub trait CrossChainManagement {
         
         // simple transfer
         if tx.method_name.is_empty() {
-            let mut arg_buffer = ArgBuffer::new();
-            arg_buffer.push_raw_arg(token_name.as_slice());
-            arg_buffer.push_raw_arg(&amount.to_bytes_be());
-            arg_buffer.push_raw_arg(tx.to_contract_address.as_bytes());
-            arg_buffer.push_raw_arg(tx.tx_hash.as_bytes());
+            let mut serializer = HexCallDataSerializer::new(TRANSFER_ESDT_TO_ACCOUNT_ENDPOINT_NAME);
+            serializer.push_argument_bytes(token_name.as_slice());
+            serializer.push_argument_bytes(&amount.to_bytes_be());
+            serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
+            serializer.push_argument_bytes(tx.tx_hash.as_bytes());
 
             self.set_tx_status(chain_id, tx_id, TransactionStatus::InProgress);
 
-            self.execute_on_dest_context(
-                self.get_gas_left(),
-                &token_management_contract_address,
-                &BigUint::zero(),
-                TRANSFER_ESDT_TO_ACCOUNT_ENDPOINT_NAME,
-                &arg_buffer,
-            );
+            self.async_call(&token_management_contract_address, &BigUint::zero(), serializer.as_slice());
         }
         // scCall
         else {
