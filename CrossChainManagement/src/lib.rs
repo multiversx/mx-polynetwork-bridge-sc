@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{ArgBuffer, HexCallDataSerializer, imports, only_owner};
+use elrond_wasm::{imports, only_owner, ArgBuffer, HexCallDataSerializer};
 use header::*;
 use transaction::*;
 
@@ -13,7 +13,7 @@ const TRANSFER_ESDT_TO_CONTRACT_ENDPOINT_NAME: &[u8] = b"transferEsdtToContract"
 pub trait BlockHeaderSync {
     #[rustfmt::skip]
 	#[callback(get_header_by_height_callback)]
-    fn getHeaderByHeight(&self, chain_id: u64, height: u32, 
+    fn getHeaderByHeight(&self, chain_id: u64, height: u32,
         #[callback_arg] tx: &Transaction,
         #[callback_arg] token_name: &BoxedBytes,
         #[callback_arg] amount: &BigUint
@@ -24,7 +24,7 @@ pub trait BlockHeaderSync {
 pub trait SimpleEsdt {
     #[rustfmt::skip]
 	#[callback(get_tx_status_callback)]
-    fn getTxStatus(&self, tx_hash: &H256, 
+    fn getTxStatus(&self, tx_hash: &H256,
         #[callback_arg] tx_id: u64
     );
 }
@@ -68,7 +68,7 @@ pub trait CrossChainManagement {
         only_owner!(self, "only owner may call this function");
 
         let mut token_whitelist = self.get_token_whitelist();
-        
+
         for i in 0..token_whitelist.len() {
             if token_whitelist[i] == token_name {
                 token_whitelist.remove(i);
@@ -104,8 +104,11 @@ pub trait CrossChainManagement {
         if !token_name.is_empty() && esdt_value > 0 {
             let token_whitelist = self.get_token_whitelist();
 
-            require!(token_whitelist.contains(&token_name), "Token is not on whitelist. Transaction rejected");
-                
+            require!(
+                token_whitelist.contains(&token_name),
+                "Token is not on whitelist. Transaction rejected"
+            );
+
             self.set_payment_for_tx(to_chain_id, tx_id, &(token_name, esdt_value));
         }
 
@@ -167,7 +170,10 @@ pub trait CrossChainManagement {
         if !token_name.is_empty() && amount > 0 {
             let token_whitelist = self.get_token_whitelist();
 
-            require!(token_whitelist.contains(&token_name), "Token is not on whitelist. Transaction rejected");
+            require!(
+                token_whitelist.contains(&token_name),
+                "Token is not on whitelist. Transaction rejected"
+            );
         }
 
         let contract_address = self.get_header_sync_contract_address();
@@ -187,13 +193,19 @@ pub trait CrossChainManagement {
 
         let chain_id = self.get_own_chain_id();
 
-        require!(!self.is_empty_tx_by_id(chain_id, tx_id), "Transaction does not exist");
-        require!(self.get_tx_status(chain_id, tx_id) == TransactionStatus::Pending, "Transaction is not Pending");
+        require!(
+            !self.is_empty_tx_by_id(chain_id, tx_id),
+            "Transaction does not exist"
+        );
+        require!(
+            self.get_tx_status(chain_id, tx_id) == TransactionStatus::Pending,
+            "Transaction is not Pending"
+        );
 
         let tx = self.get_tx_by_id(chain_id, tx_id);
         let (token_name, amount) = self.get_payment_for_tx(chain_id, tx_id);
         let token_management_contract_address = self.get_token_management_contract_address();
-        
+
         // simple transfer
         if tx.method_name.is_empty() {
             let mut serializer = HexCallDataSerializer::new(TRANSFER_ESDT_TO_ACCOUNT_ENDPOINT_NAME);
@@ -204,16 +216,23 @@ pub trait CrossChainManagement {
 
             self.set_tx_status(chain_id, tx_id, TransactionStatus::InProgress);
 
-            self.async_call(&token_management_contract_address, &BigUint::zero(), serializer.as_slice());
+            self.async_call(
+                &token_management_contract_address,
+                &BigUint::zero(),
+                serializer.as_slice(),
+            );
         }
         // scCall
         else {
             let mut method_args_encoded = Vec::new();
             if !tx.method_args.is_empty() {
-                method_args_encoded = match elrond_wasm::elrond_codec::top_encode_to_vec(&tx.method_args) {
-                    core::result::Result::Ok(encoded) => encoded,
-                    core::result::Result::Err(_) => return sc_error!("failed to encode method arguments")
-                }
+                method_args_encoded =
+                    match elrond_wasm::elrond_codec::top_encode_to_vec(&tx.method_args) {
+                        core::result::Result::Ok(encoded) => encoded,
+                        core::result::Result::Err(_) => {
+                            return sc_error!("failed to encode method arguments")
+                        }
+                    }
             }
 
             let mut arg_buffer = ArgBuffer::new();
@@ -249,10 +268,15 @@ pub trait CrossChainManagement {
 
         let chain_id = self.get_own_chain_id();
 
-        require!(!self.is_empty_tx_by_id(chain_id, tx_id), "Transaction does not exist");
+        require!(
+            !self.is_empty_tx_by_id(chain_id, tx_id),
+            "Transaction does not exist"
+        );
 
-        require!(self.get_tx_status(chain_id, tx_id) == TransactionStatus::InProgress, 
-            "Transaction must be processed as Pending first");
+        require!(
+            self.get_tx_status(chain_id, tx_id) == TransactionStatus::InProgress,
+            "Transaction must be processed as Pending first"
+        );
 
         let tx_hash = self.get_tx_by_id(chain_id, tx_id).tx_hash;
 
@@ -271,7 +295,7 @@ pub trait CrossChainManagement {
         result: AsyncCallResult<Option<Header>>,
         #[callback_arg] tx: Transaction,
         #[callback_arg] token_name: BoxedBytes,
-        #[callback_arg] amount: BigUint
+        #[callback_arg] amount: BigUint,
     ) {
         match result {
             AsyncCallResult::Ok(opt_header) => {
@@ -304,17 +328,19 @@ pub trait CrossChainManagement {
 
     #[callback]
     fn get_tx_status_callback(
-        &self, 
-        result: AsyncCallResult<TransactionStatus>, 
-        #[callback_arg] tx_id: u64) {
-
+        &self,
+        result: AsyncCallResult<TransactionStatus>,
+        #[callback_arg] tx_id: u64,
+    ) {
         match result {
             AsyncCallResult::Ok(tx_status) => {
                 // we only update if the transaction was executed or rejected
-                if tx_status == TransactionStatus::Executed || tx_status == TransactionStatus::Rejected {
+                if tx_status == TransactionStatus::Executed
+                    || tx_status == TransactionStatus::Rejected
+                {
                     self.set_tx_status(self.get_own_chain_id(), tx_id, tx_status);
                 }
-            },
+            }
             AsyncCallResult::Err(_) => {}
         }
     }

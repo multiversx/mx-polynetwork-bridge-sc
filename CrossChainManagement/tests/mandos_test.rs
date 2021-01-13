@@ -1,4 +1,3 @@
-
 extern crate block_header_sync;
 use block_header_sync::*;
 use elrond_wasm::*;
@@ -8,7 +7,8 @@ fn contract_map() -> ContractMap<TxContext> {
     let mut contract_map = ContractMap::new();
     contract_map.register_contract(
         "file:../output/block-header-sync.wasm",
-        Box::new(|context| Box::new(BlockHeaderSyncImpl::new(context))));
+        Box::new(|context| Box::new(BlockHeaderSyncImpl::new(context))),
+    );
     contract_map
 }
 
