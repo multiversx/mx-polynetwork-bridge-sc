@@ -39,10 +39,45 @@ pub trait CrossChainManagement {
 
     // endpoints - owner-only
 
+    #[endpoint(setTokenManagementContractAddress)]
     fn set_token_management_contract_address_endpoint(&self, address: Address) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         self.set_token_management_contract_address(&address);
+
+        Ok(())
+    }
+
+    #[endpoint(addTokenToWhitelist)]
+    fn add_token_to_whitelist(&self, token_name: BoxedBytes) -> SCResult<()> {
+        only_owner!(self, "only owner may call this function");
+
+        let mut token_whitelist = self.get_token_whitelist();
+
+        if !token_whitelist.contains(&token_name) {
+            token_whitelist.push(token_name);
+        }
+
+        self.set_token_whitelist(&token_whitelist);
+
+        Ok(())
+    }
+
+    #[endpoint(removeTokenFromWhitelist)]
+    fn remove_token_from_whitelist(&self, token_name: BoxedBytes) -> SCResult<()> {
+        only_owner!(self, "only owner may call this function");
+
+        let mut token_whitelist = self.get_token_whitelist();
+        
+        for i in 0..token_whitelist.len() {
+            if token_whitelist[i] == token_name {
+                token_whitelist.remove(i);
+
+                break;
+            }
+        }
+
+        self.set_token_whitelist(&token_whitelist);
 
         Ok(())
     }
@@ -67,6 +102,10 @@ pub trait CrossChainManagement {
         let tx_id = self.get_cross_chain_tx_id(to_chain_id);
 
         if !token_name.is_empty() && esdt_value > 0 {
+            let token_whitelist = self.get_token_whitelist();
+
+            require!(token_whitelist.contains(&token_name), "Token is not on whitelist. Transaction rejected");
+                
             self.set_payment_for_tx(to_chain_id, tx_id, &(token_name, esdt_value));
         }
 
@@ -124,6 +163,12 @@ pub trait CrossChainManagement {
             self.is_empty_tx_by_id(tx.to_chain_id, tx.tx_id),
             "This transaction was already processed"
         );
+
+        if !token_name.is_empty() && amount > 0 {
+            let token_whitelist = self.get_token_whitelist();
+
+            require!(token_whitelist.contains(&token_name), "Token is not on whitelist. Transaction rejected");
+        }
 
         let contract_address = self.get_header_sync_contract_address();
         let proxy = contract_proxy!(self, &contract_address, BlockHeaderSync);
@@ -299,6 +344,16 @@ pub trait CrossChainManagement {
     #[storage_set("headerSyncContractAddress")]
     fn set_header_sync_contract_address(&self, address: &Address);
 
+    // Token management contract. Currently, this is the esdt contract
+    #[storage_get("tokenManagementContractAddress")]
+    fn get_token_management_contract_address(&self) -> Address;
+
+    #[storage_set("tokenManagementContractAddress")]
+    fn set_token_management_contract_address(&self, address: &Address);
+
+    #[storage_is_empty("tokenManagementContractAddress")]
+    fn is_empty_token_management_contract_address(&self) -> bool;
+
     // payment for a specific transaction
 
     #[view(getPaymentForTx)]
@@ -350,13 +405,11 @@ pub trait CrossChainManagement {
     #[storage_set("txStatus")]
     fn set_tx_status(&self, chain_id: u64, tx_id: u64, status: TransactionStatus);
 
-    // Token management contract. Currently, this is the esdt contract
-    #[storage_get("tokenManagementContractAddress")]
-    fn get_token_management_contract_address(&self) -> Address;
+    // Token whitelist
 
-    #[storage_set("tokenManagementContractAddress")]
-    fn set_token_management_contract_address(&self, address: &Address);
+    #[storage_get("tokenWhitelist")]
+    fn get_token_whitelist(&self) -> Vec<BoxedBytes>;
 
-    #[storage_is_empty("tokenManagementContractAddress")]
-    fn is_empty_token_management_contract_address(&self) -> bool;
+    #[storage_set("tokenWhitelist")]
+    fn set_token_whitelist(&self, token_whitelist: &Vec<BoxedBytes>);
 }
