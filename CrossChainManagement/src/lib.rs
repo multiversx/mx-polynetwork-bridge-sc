@@ -143,6 +143,7 @@ pub trait CrossChainManagement {
         let chain_id = self.get_own_chain_id();
 
         require!(!self.is_empty_tx_by_id(chain_id, tx_id), "Transaction does not exist");
+        require!(self.get_tx_status(chain_id, tx_id) == TransactionStatus::Pending, "Transaction is not Pending");
 
         let tx = self.get_tx_by_id(chain_id, tx_id);
         let (token_name, amount) = self.get_payment_for_tx(chain_id, tx_id);
