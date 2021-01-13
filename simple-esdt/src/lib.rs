@@ -1,7 +1,7 @@
 #![no_std]
 #![allow(clippy::string_lit_as_bytes)]
 
-use elrond_wasm::{imports, only_owner, HexCallDataSerializer};
+use elrond_wasm::{imports, HexCallDataSerializer};
 
 use transaction::TransactionStatus;
 
@@ -19,20 +19,6 @@ pub trait SimpleEsdt {
         self.set_wrapped_egld_token_name(&wrapped_egld_token_name);
     }
 
-    // endpoints - owner-only
-
-    #[endpoint(supplyTokens)]
-    fn supply_tokens(&self) -> SCResult<()> {
-        only_owner!(self, "Only owner may call this function");
-
-        let token_name = self.get_esdt_token_name_boxed();
-        let wrapped_token_payment = self.get_esdt_value_big_uint();
-
-        self.add_total_wrapped(&token_name, &wrapped_token_payment);
-
-        Ok(())
-    }
-
     // endpoints - CrossChainManagement contract - only
 
     #[endpoint(transferEsdtToAccount)]
@@ -48,17 +34,21 @@ pub trait SimpleEsdt {
             "Only the cross chain management contract may call this function"
         );
 
-        let total_wrapped = self.get_total_wrapped_remaining(&token_name);
-
+        let tx_status = self.get_tx_status(&poly_tx_hash);
         require!(
-            total_wrapped >= amount,
-            "Contract does not have enough tokens"
-        );
-
-        require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::None,
+            tx_status == TransactionStatus::None || tx_status == TransactionStatus::OutOfFunds,
             "Transaction was already processed"
         );
+
+        let total_wrapped = self.get_total_wrapped_remaining(&token_name);
+        if total_wrapped < amount {
+            if tx_status != TransactionStatus::OutOfFunds {
+                self.set_tx_status(&poly_tx_hash, TransactionStatus::OutOfFunds);
+            }
+
+            // we can't return SCError here, as that would erase storage changes, i.e. the status set above
+            return Ok(());
+        }
 
         // a send_tx can not fail and has no callback, so we preemptively set it as executed
         self.set_tx_status(&poly_tx_hash, TransactionStatus::Executed);
@@ -88,17 +78,21 @@ pub trait SimpleEsdt {
             "Only the cross chain management contract may call this function"
         );
 
-        let total_wrapped = self.get_total_wrapped_remaining(&token_name);
-
+        let tx_status = self.get_tx_status(&poly_tx_hash);
         require!(
-            total_wrapped >= amount,
-            "Contract does not have enough tokens"
-        );
-
-        require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::None,
+            tx_status == TransactionStatus::None || tx_status == TransactionStatus::OutOfFunds,
             "Transaction was already processed"
         );
+
+        let total_wrapped = self.get_total_wrapped_remaining(&token_name);
+        if total_wrapped < amount {
+            if tx_status != TransactionStatus::OutOfFunds {
+                self.set_tx_status(&poly_tx_hash, TransactionStatus::OutOfFunds);
+            }
+
+            // we can't return SCError here, as that would erase storage changes, i.e. the status set above
+            return Ok(());
+        }
 
         // setting the status to InProgress so it can't be executed multiple times before the async-call callBack is reached
         self.set_tx_status(&poly_tx_hash, TransactionStatus::InProgress);
