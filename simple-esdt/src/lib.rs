@@ -100,8 +100,8 @@ pub trait SimpleEsdt {
             "Transaction was already processed"
         );
 
-        // setting the status to Pending so it can't be executed multiple times before the async-call callBack is reached
-        self.set_tx_status(&poly_tx_hash, TransactionStatus::Pending);
+        // setting the status to InProgress so it can't be executed multiple times before the async-call callBack is reached
+        self.set_tx_status(&poly_tx_hash, TransactionStatus::InProgress);
 
         // save the poly_tx_hash to be used in the callback
         self.set_temporary_storage_poly_tx_hash(&self.get_tx_hash(), &poly_tx_hash);
@@ -246,8 +246,8 @@ pub trait SimpleEsdt {
         let original_tx_hash = self.get_tx_hash();
         let poly_tx_hash = self.get_temporary_storage_poly_tx_hash(&original_tx_hash);
 
-        // Transaction must be in Pending status, otherwise, something went wrong
-        if self.get_tx_status(&poly_tx_hash) == TransactionStatus::Pending {
+        // Transaction must be in InProgress status, otherwise, something went wrong
+        if self.get_tx_status(&poly_tx_hash) == TransactionStatus::InProgress {
             match u32::dep_decode(&mut error_code_vec.as_slice()) {
                 core::result::Result::Ok(err_code) => {
                     // error code 0 means success
