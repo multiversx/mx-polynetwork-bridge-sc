@@ -1,11 +1,12 @@
 #![no_std]
 #![allow(clippy::string_lit_as_bytes)]
 
-use elrond_wasm::{imports, HexCallDataSerializer};
+use elrond_wasm::{imports, derive_imports, HexCallDataSerializer};
 
 use transaction::TransactionStatus;
 
 imports!();
+derive_imports!();
 
 // erd1qqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzllls8a5w6u
 const ESDT_SYSTEM_SC_ADDRESS_ARRAY: [u8; 32] = [
@@ -16,10 +17,18 @@ const ESDT_SYSTEM_SC_ADDRESS_ARRAY: [u8; 32] = [
 const ESDT_TRANSFER_STRING: &[u8] = b"ESDTTransfer";
 const ESDT_ISSUE_STRING: &[u8] = b"issue";
 const ESDT_ISSUE_COST: u64 = 5000000000000000000; // 5 eGLD
+const ESDT_MINT_STRING: &[u8] = b"mint";
 
 const WRAPPED_EGLD_DISPLAY_NAME: &[u8] = b"Wrapped eGLD";
 const WRAPPED_EGLD_TICKER: &[u8] = b"WEGLD";
 const EGLD_DECIMALS: u8 = 18;
+
+#[derive(NestedEncode, NestedDecode, TopEncode, TopDecode)]
+pub struct EsdtOperation<BigUint:BigUintApi> {
+    name: BoxedBytes,
+    token_identifier: BoxedBytes,
+    amount: BigUint,
+}
 
 #[elrond_wasm_derive::contract(SimpleEsdtImpl)]
 pub trait SimpleEsdt {
@@ -49,8 +58,8 @@ pub trait SimpleEsdt {
         );
 
         self.issue_esdt_token(
-            WRAPPED_EGLD_DISPLAY_NAME,
-            WRAPPED_EGLD_TICKER,
+            &BoxedBytes::from(WRAPPED_EGLD_DISPLAY_NAME),
+            &BoxedBytes::from(WRAPPED_EGLD_TICKER),
             &initial_supply,
             EGLD_DECIMALS,
         );
@@ -76,8 +85,8 @@ pub trait SimpleEsdt {
         );
 
         self.issue_esdt_token(
-            token_display_name.as_slice(),
-            token_ticker.as_slice(),
+            &token_display_name,
+            &token_ticker,
             &initial_supply,
             num_decimals,
         );
@@ -228,6 +237,23 @@ pub trait SimpleEsdt {
         Ok(())
     }
 
+    #[endpoint(mintEsdtToken)]
+    fn mint_esdt_token_endpoint(
+        &self,
+        token_identifier: BoxedBytes,
+        amount: BigUint,
+    ) -> SCResult<()> {
+        require!(
+            self.get_was_token_issued(&token_identifier),
+            "Token must be issued first"
+        );
+        require!(amount > 0, "Amount minted must be more than 0");
+
+        self.mint_esdt_token(&token_identifier, &amount);
+
+        Ok(())
+    }
+
     // private
 
     fn get_esdt_token_identifier_boxed(&self) -> BoxedBytes {
@@ -305,15 +331,15 @@ pub trait SimpleEsdt {
 
     fn issue_esdt_token(
         &self,
-        token_display_name: &[u8],
-        token_ticker: &[u8],
+        token_display_name: &BoxedBytes,
+        token_ticker: &BoxedBytes,
         initial_supply: &BigUint,
         num_decimals: u8,
     ) {
         let mut serializer = HexCallDataSerializer::new(ESDT_ISSUE_STRING);
 
-        serializer.push_argument_bytes(token_display_name);
-        serializer.push_argument_bytes(token_ticker);
+        serializer.push_argument_bytes(token_display_name.as_slice());
+        serializer.push_argument_bytes(token_ticker.as_slice());
         serializer.push_argument_bytes(&initial_supply.to_bytes_be());
         serializer.push_argument_bytes(&[num_decimals]);
 
@@ -339,16 +365,41 @@ pub trait SimpleEsdt {
         serializer.push_argument_bytes(&b"false"[..]);
 
         // save data for callback
-        let original_tx_hash = self.get_tx_hash();
         self.set_temporary_storage_esdt_operation(
-            &original_tx_hash,
-            &BoxedBytes::from(ESDT_ISSUE_STRING),
+            &self.get_tx_hash(),
+            &EsdtOperation {
+                name: BoxedBytes::from(ESDT_ISSUE_STRING),
+                token_identifier: BoxedBytes::empty(),
+                amount: initial_supply.clone()
+            }
         );
-        self.set_temporary_storage_esdt_amount(&original_tx_hash, &initial_supply);
 
         self.async_call(
             &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
             &BigUint::from(ESDT_ISSUE_COST),
+            serializer.as_slice(),
+        );
+    }
+
+    fn mint_esdt_token(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+        let mut serializer = HexCallDataSerializer::new(ESDT_MINT_STRING);
+        serializer.push_argument_bytes(token_identifier.as_slice());
+        serializer.push_argument_bytes(&amount.to_bytes_be());
+
+        // save data for callback
+        // save data for callback
+        self.set_temporary_storage_esdt_operation(
+            &self.get_tx_hash(),
+            &EsdtOperation {
+                name: BoxedBytes::from(ESDT_MINT_STRING),
+                token_identifier: token_identifier.clone(),
+                amount: amount.clone()
+            }
+        );
+
+        self.async_call(
+            &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
+            &BigUint::zero(),
             serializer.as_slice(),
         );
     }
@@ -368,22 +419,24 @@ pub trait SimpleEsdt {
 
             let esdt_operation = self.get_temporary_storage_esdt_operation(&original_tx_hash);
 
-            if esdt_operation.as_slice() == ESDT_ISSUE_STRING {
-                self.perform_esdt_issue_callback(&result, &original_tx_hash);
+            if esdt_operation.name.as_slice() == ESDT_ISSUE_STRING {
+                self.perform_esdt_issue_callback(&result, &esdt_operation.amount);
+            }
+            else if esdt_operation.name.as_slice() == ESDT_MINT_STRING {
+                self.perform_esdt_mint_callback(&result, &esdt_operation.token_identifier, &esdt_operation.amount);
             }
 
             self.clear_temporary_storage_esdt_operation(&original_tx_hash);
-            self.clear_temporary_storage_esdt_amount(&original_tx_hash);
 
             return;
         } else {
-            self.perform_smart_contract_async_callback(&result, &original_tx_hash);
+            self.perform_dest_smart_contract_async_callback(&result, &original_tx_hash);
 
             self.clear_temporary_storage_poly_tx_hash(&original_tx_hash);
         }
     }
 
-    fn perform_smart_contract_async_callback(
+    fn perform_dest_smart_contract_async_callback(
         &self,
         result: &Vec<Vec<u8>>,
         original_tx_hash: &H256,
@@ -410,20 +463,33 @@ pub trait SimpleEsdt {
         }
     }
 
-    fn perform_esdt_issue_callback(&self, result: &Vec<Vec<u8>>, original_tx_hash: &H256) {
+    fn perform_esdt_issue_callback(&self, result: &Vec<Vec<u8>>, initial_supply: &BigUint) {
         let error_code_vec = &result[0];
-        let token_identifier = &result[1];
+        let token_identifier = BoxedBytes::from(result[1].as_slice());
 
         match u32::dep_decode(&mut error_code_vec.as_slice()) {
             core::result::Result::Ok(err_code) => {
                 // error code 0 means success
                 if err_code == 0 {
-                    let initial_supply = self.get_temporary_storage_esdt_amount(&original_tx_hash);
+                    self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
+                    self.set_was_token_issued(&token_identifier, true);
+                }
 
-                    self.set_total_wrapped_remaining(
-                        &BoxedBytes::from(token_identifier.as_slice()),
-                        &initial_supply,
-                    );
+                // nothing to do in case of error
+            }
+            // we should never get a decode error here, but either way, nothing to do if this fails
+            core::result::Result::Err(_) => {}
+        }
+    }
+
+    fn perform_esdt_mint_callback(&self, result: &Vec<Vec<u8>>, token_identifier: &BoxedBytes, amount: &BigUint) {
+        let error_code_vec = &result[0];
+
+        match u32::dep_decode(&mut error_code_vec.as_slice()) {
+            core::result::Result::Ok(err_code) => {
+                // error code 0 means success
+                if err_code == 0 {
+                    self.set_total_wrapped_remaining(&token_identifier, &amount);
                 }
 
                 // nothing to do in case of error
@@ -449,12 +515,22 @@ pub trait SimpleEsdt {
 
     // The total remaining wrapped tokens of each type owned by this SC. Stored so we don't have to query everytime.
 
-    #[view(getTotalWrapped)]
+    #[view(getTotalWrappedRemaining)]
     #[storage_get("totalWrappedRemaining")]
     fn get_total_wrapped_remaining(&self, token_identifier: &BoxedBytes) -> BigUint;
 
     #[storage_set("totalWrappedRemaining")]
     fn set_total_wrapped_remaining(&self, token_identifier: &BoxedBytes, total_wrapped: &BigUint);
+
+    // This is used to be able to tell the difference between a totalWrappedRemaining of 0 and a non-issued token
+    // storage_is_empty would return 'true' in both cases
+
+    #[view(wasTokenIssued)]
+    #[storage_get("wasTokenIssued")]
+    fn get_was_token_issued(&self, token_identifier: &BoxedBytes) -> bool;
+
+    #[storage_set("wasTokenIssued")]
+    fn set_was_token_issued(&self, token_identifier: &BoxedBytes, was_token_issued: bool);
 
     // cross chain management
 
@@ -491,16 +567,16 @@ pub trait SimpleEsdt {
     #[storage_is_empty("temporaryStoragePolyTxHash")]
     fn is_empty_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256) -> bool;
 
-    // temporary storage for ESDT operations. Used in callback to determine which function was called
+    // temporary storage for ESDT operations. Used in callback.
 
     #[storage_get("temporaryStorageEsdtOperation")]
-    fn get_temporary_storage_esdt_operation(&self, original_tx_hash: &H256) -> BoxedBytes;
+    fn get_temporary_storage_esdt_operation(&self, original_tx_hash: &H256) -> EsdtOperation<BigUint>;
 
     #[storage_set("temporaryStorageEsdtOperation")]
     fn set_temporary_storage_esdt_operation(
         &self,
         original_tx_hash: &H256,
-        esdt_operation: &BoxedBytes,
+        esdt_operation: &EsdtOperation<BigUint>,
     );
 
     #[storage_clear("temporaryStorageEsdtOperation")]
@@ -508,15 +584,4 @@ pub trait SimpleEsdt {
 
     #[storage_is_empty("temporaryStorageEsdtOperation")]
     fn is_empty_temporary_storage_esdt_operation(&self, original_tx_hash: &H256) -> bool;
-
-    // temporary storage for ESDT operations' value. Used in callback to determine amount issued/minted/burned
-
-    #[storage_get("temporaryStorageEsdtAmount")]
-    fn get_temporary_storage_esdt_amount(&self, original_tx_hash: &H256) -> BigUint;
-
-    #[storage_set("temporaryStorageEsdtAmount")]
-    fn set_temporary_storage_esdt_amount(&self, original_tx_hash: &H256, esdt_amount: &BigUint);
-
-    #[storage_clear("temporaryStorageEsdtAmount")]
-    fn clear_temporary_storage_esdt_amount(&self, original_tx_hash: &H256);
 }
