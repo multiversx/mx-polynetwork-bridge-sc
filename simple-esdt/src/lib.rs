@@ -104,7 +104,7 @@ pub trait SimpleEsdt {
         only_owner!(self, "only owner may call this function");
 
         require!(
-            self.get_total_wrapped_remaining(&token_identifier) > amount,
+            amount <= self.get_total_wrapped_remaining(&token_identifier),
             "Can't burn more than total wrapped remaining"
         );
 
