@@ -15,7 +15,7 @@ lto = true
 debug = false
 panic = "abort"
 
-[dependencies.simple-erc20]
+[dependencies.simple-esdt]
 path = ".."
 features = ["wasm-output-mode"]
 default-features = false
