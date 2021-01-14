@@ -350,7 +350,6 @@ pub trait SimpleEsdt {
 
     #[callback_raw]
     fn callback_raw(&self, result: Vec<Vec<u8>>) {
-        let error_code_vec = &result[0];
         let original_tx_hash = self.get_tx_hash();
 
         // if this is empty, it means this callBack comes from an issue ESDT call
@@ -361,27 +360,9 @@ pub trait SimpleEsdt {
             }
 
             let esdt_operation = self.get_temporary_storage_esdt_operation(&original_tx_hash);
-            let token_identifier = &result[1];
 
             if esdt_operation.as_slice() == ESDT_ISSUE_STRING {
-                match u32::dep_decode(&mut error_code_vec.as_slice()) {
-                    core::result::Result::Ok(err_code) => {
-                        // error code 0 means success
-                        if err_code == 0 {
-                            let initial_supply =
-                                self.get_temporary_storage_esdt_amount(&original_tx_hash);
-
-                            self.set_total_wrapped_remaining(
-                                &BoxedBytes::from(token_identifier.as_slice()),
-                                &initial_supply,
-                            );
-                        }
-
-                        // nothing to do in case of error
-                    }
-                    // we should never get a decode error here, but either way, nothing to do if this fails
-                    core::result::Result::Err(_) => {}
-                }
+                self.perform_esdt_issue_callback(&result, &original_tx_hash);
             }
 
             self.clear_temporary_storage_esdt_operation(&original_tx_hash);
@@ -389,7 +370,15 @@ pub trait SimpleEsdt {
 
             return;
         }
+        else {
+            self.perform_smart_contract_async_callback(&result, &original_tx_hash);
 
+            self.clear_temporary_storage_poly_tx_hash(&original_tx_hash);
+        }
+    }
+
+    fn perform_smart_contract_async_callback(&self, result: &Vec<Vec<u8>>, original_tx_hash: &H256) {
+        let error_code_vec = &result[0];
         let poly_tx_hash = self.get_temporary_storage_poly_tx_hash(&original_tx_hash);
 
         // Transaction must be in InProgress status, otherwise, something went wrong
@@ -409,8 +398,30 @@ pub trait SimpleEsdt {
                 }
             }
         }
+    }
 
-        self.clear_temporary_storage_poly_tx_hash(&original_tx_hash);
+    fn perform_esdt_issue_callback(&self, result: &Vec<Vec<u8>>, original_tx_hash: &H256) {
+        let error_code_vec = &result[0];
+        let token_identifier = &result[1];
+
+        match u32::dep_decode(&mut error_code_vec.as_slice()) {
+            core::result::Result::Ok(err_code) => {
+                // error code 0 means success
+                if err_code == 0 {
+                    let initial_supply =
+                        self.get_temporary_storage_esdt_amount(&original_tx_hash);
+
+                    self.set_total_wrapped_remaining(
+                        &BoxedBytes::from(token_identifier.as_slice()),
+                        &initial_supply,
+                    );
+                }
+
+                // nothing to do in case of error
+            }
+            // we should never get a decode error here, but either way, nothing to do if this fails
+            core::result::Result::Err(_) => {}
+        }
     }
 
     // STORAGE
