@@ -464,6 +464,8 @@ pub trait SimpleEsdt {
     #[storage_set("txStatus")]
     fn set_tx_status(&self, poly_tx_hash: &H256, status: TransactionStatus);
 
+    // ---------- Temporary storage for raw callbacks ----------
+
     // temporary storage for the poly_tx_hash, which is NOT the same as original_tx_hash
     // original_tx_hash is what you get when you call self.get_tx_hash() in the api
     // poly_tx_hash is the hash of the poly transaction
