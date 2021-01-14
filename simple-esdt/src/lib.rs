@@ -58,6 +58,33 @@ pub trait SimpleEsdt {
         Ok(())
     }
 
+    #[payable]
+    #[endpoint(issueEsdtToken)]
+    fn issue_esdt_token_endpoint(
+        &self,
+        token_display_name: BoxedBytes,
+        token_ticker: BoxedBytes,
+        initial_supply: BigUint,
+        num_decimals: u8,
+        #[payment] payment: BigUint,
+    ) -> SCResult<()> {
+        only_owner!(self, "only owner may call this function");
+
+        require!(
+            payment == BigUint::from(ESDT_ISSUE_COST),
+            "Wrong payment, should pay exactly 5 eGLD for ESDT token issue"
+        );
+
+        self.issue_esdt_token(
+            token_display_name.as_slice(),
+            token_ticker.as_slice(),
+            &initial_supply,
+            num_decimals,
+        );
+
+        Ok(())
+    }
+
     // endpoints - CrossChainManagement contract - only
 
     #[endpoint(transferEsdtToAccount)]
@@ -197,31 +224,6 @@ pub trait SimpleEsdt {
 
         // 1 wrapped eGLD = 1 eGLD, so we pay back the same amount
         self.send_tx(&self.get_caller(), &wrapped_egld_payment, b"unwrapping");
-
-        Ok(())
-    }
-
-    #[payable]
-    #[endpoint(issueEsdtToken)]
-    fn issue_esdt_token_endpoint(
-        &self,
-        token_display_name: BoxedBytes,
-        token_ticker: BoxedBytes,
-        initial_supply: BigUint,
-        num_decimals: u8,
-        #[payment] payment: BigUint,
-    ) -> SCResult<()> {
-        require!(
-            payment == BigUint::from(ESDT_ISSUE_COST),
-            "Wrong payment, should pay exactly 5 eGLD for ESDT token issue"
-        );
-
-        self.issue_esdt_token(
-            token_display_name.as_slice(),
-            token_ticker.as_slice(),
-            &initial_supply,
-            num_decimals,
-        );
 
         Ok(())
     }
