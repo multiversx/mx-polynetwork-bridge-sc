@@ -1,7 +1,7 @@
 #![no_std]
 #![allow(clippy::string_lit_as_bytes)]
 
-use elrond_wasm::{imports, derive_imports, HexCallDataSerializer};
+use elrond_wasm::{derive_imports, imports, HexCallDataSerializer};
 
 use transaction::TransactionStatus;
 
@@ -14,17 +14,19 @@ const ESDT_SYSTEM_SC_ADDRESS_ARRAY: [u8; 32] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xff,
 ];
 
+const ESDT_ISSUE_COST: u64 = 5000000000000000000; // 5 eGLD
+
 const ESDT_TRANSFER_STRING: &[u8] = b"ESDTTransfer";
 const ESDT_ISSUE_STRING: &[u8] = b"issue";
-const ESDT_ISSUE_COST: u64 = 5000000000000000000; // 5 eGLD
 const ESDT_MINT_STRING: &[u8] = b"mint";
+const ESDT_BURN_STRING: &[u8] = b"ESDTBurn";
 
 const WRAPPED_EGLD_DISPLAY_NAME: &[u8] = b"Wrapped eGLD";
 const WRAPPED_EGLD_TICKER: &[u8] = b"WEGLD";
 const EGLD_DECIMALS: u8 = 18;
 
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode)]
-pub struct EsdtOperation<BigUint:BigUintApi> {
+pub struct EsdtOperation<BigUint: BigUintApi> {
     name: BoxedBytes,
     token_identifier: BoxedBytes,
     amount: BigUint,
@@ -90,6 +92,23 @@ pub trait SimpleEsdt {
             &initial_supply,
             num_decimals,
         );
+
+        Ok(())
+    }
+
+    fn burn_esdt_token_endpoint(
+        &self,
+        token_identifier: BoxedBytes,
+        amount: BigUint,
+    ) -> SCResult<()> {
+        only_owner!(self, "only owner may call this function");
+
+        require!(
+            self.get_total_wrapped_remaining(&token_identifier) > amount,
+            "Can't burn more than total wrapped remaining"
+        );
+
+        self.burn_esdt_token(&token_identifier, &amount);
 
         Ok(())
     }
@@ -370,8 +389,8 @@ pub trait SimpleEsdt {
             &EsdtOperation {
                 name: BoxedBytes::from(ESDT_ISSUE_STRING),
                 token_identifier: BoxedBytes::empty(),
-                amount: initial_supply.clone()
-            }
+                amount: initial_supply.clone(),
+            },
         );
 
         self.async_call(
@@ -393,8 +412,31 @@ pub trait SimpleEsdt {
             &EsdtOperation {
                 name: BoxedBytes::from(ESDT_MINT_STRING),
                 token_identifier: token_identifier.clone(),
-                amount: amount.clone()
-            }
+                amount: amount.clone(),
+            },
+        );
+
+        self.async_call(
+            &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
+            &BigUint::zero(),
+            serializer.as_slice(),
+        );
+    }
+
+    fn burn_esdt_token(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+        let mut serializer = HexCallDataSerializer::new(ESDT_BURN_STRING);
+        serializer.push_argument_bytes(token_identifier.as_slice());
+        serializer.push_argument_bytes(&amount.to_bytes_be());
+
+        // save data for callback
+        // save data for callback
+        self.set_temporary_storage_esdt_operation(
+            &self.get_tx_hash(),
+            &EsdtOperation {
+                name: BoxedBytes::from(ESDT_BURN_STRING),
+                token_identifier: token_identifier.clone(),
+                amount: amount.clone(),
+            },
         );
 
         self.async_call(
@@ -421,9 +463,18 @@ pub trait SimpleEsdt {
 
             if esdt_operation.name.as_slice() == ESDT_ISSUE_STRING {
                 self.perform_esdt_issue_callback(&result, &esdt_operation.amount);
-            }
-            else if esdt_operation.name.as_slice() == ESDT_MINT_STRING {
-                self.perform_esdt_mint_callback(&result, &esdt_operation.token_identifier, &esdt_operation.amount);
+            } else if esdt_operation.name.as_slice() == ESDT_MINT_STRING {
+                self.perform_esdt_mint_callback(
+                    &result,
+                    &esdt_operation.token_identifier,
+                    &esdt_operation.amount,
+                );
+            } else if esdt_operation.name.as_slice() == ESDT_BURN_STRING {
+                self.perform_esdt_burn_callback(
+                    &result,
+                    &esdt_operation.token_identifier,
+                    &esdt_operation.amount,
+                );
             }
 
             self.clear_temporary_storage_esdt_operation(&original_tx_hash);
@@ -482,14 +533,47 @@ pub trait SimpleEsdt {
         }
     }
 
-    fn perform_esdt_mint_callback(&self, result: &Vec<Vec<u8>>, token_identifier: &BoxedBytes, amount: &BigUint) {
+    fn perform_esdt_mint_callback(
+        &self,
+        result: &Vec<Vec<u8>>,
+        token_identifier: &BoxedBytes,
+        amount: &BigUint,
+    ) {
         let error_code_vec = &result[0];
 
         match u32::dep_decode(&mut error_code_vec.as_slice()) {
             core::result::Result::Ok(err_code) => {
                 // error code 0 means success
                 if err_code == 0 {
-                    self.set_total_wrapped_remaining(&token_identifier, &amount);
+                    let mut total_wrapped_remaining =
+                        self.get_total_wrapped_remaining(&token_identifier);
+                    total_wrapped_remaining += amount;
+                    self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
+                }
+
+                // nothing to do in case of error
+            }
+            // we should never get a decode error here, but either way, nothing to do if this fails
+            core::result::Result::Err(_) => {}
+        }
+    }
+
+    fn perform_esdt_burn_callback(
+        &self,
+        result: &Vec<Vec<u8>>,
+        token_identifier: &BoxedBytes,
+        amount: &BigUint,
+    ) {
+        let error_code_vec = &result[0];
+
+        match u32::dep_decode(&mut error_code_vec.as_slice()) {
+            core::result::Result::Ok(err_code) => {
+                // error code 0 means success
+                if err_code == 0 {
+                    let mut total_wrapped_remaining =
+                        self.get_total_wrapped_remaining(&token_identifier);
+                    total_wrapped_remaining -= amount;
+                    self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
                 }
 
                 // nothing to do in case of error
@@ -570,7 +654,10 @@ pub trait SimpleEsdt {
     // temporary storage for ESDT operations. Used in callback.
 
     #[storage_get("temporaryStorageEsdtOperation")]
-    fn get_temporary_storage_esdt_operation(&self, original_tx_hash: &H256) -> EsdtOperation<BigUint>;
+    fn get_temporary_storage_esdt_operation(
+        &self,
+        original_tx_hash: &H256,
+    ) -> EsdtOperation<BigUint>;
 
     #[storage_set("temporaryStorageEsdtOperation")]
     fn set_temporary_storage_esdt_operation(
