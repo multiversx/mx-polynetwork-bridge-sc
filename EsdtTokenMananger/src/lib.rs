@@ -32,8 +32,8 @@ pub struct EsdtOperation<BigUint: BigUintApi> {
     amount: BigUint,
 }
 
-#[elrond_wasm_derive::contract(SimpleEsdtImpl)]
-pub trait SimpleEsdt {
+#[elrond_wasm_derive::contract(EsdtTokenManagerImpl)]
+pub trait EsdtTokenManager {
     #[init]
     fn init(&self, cross_chain_management_address: Address) {
         self.set_cross_chain_management_contract_address(&cross_chain_management_address);

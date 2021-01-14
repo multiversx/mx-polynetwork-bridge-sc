@@ -1,4 +1,4 @@
 #![no_std]
 
-pub use simple_esdt::*;
+pub use esdt_token_manager::*;
 pub use elrond_wasm_output::*;

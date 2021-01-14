@@ -1,5 +1,5 @@
 [package]
-name = "simple-esdt-wasm"
+name = "esdt-token-manager-wasm"
 version = "0.0.0"
 authors = ["Dorin Iancu <dorin.iancu@elrond.com>"]
 edition = "2018"
@@ -15,7 +15,7 @@ lto = true
 debug = false
 panic = "abort"
 
-[dependencies.simple-esdt]
+[dependencies.esdt-token-manager]
 path = ".."
 features = ["wasm-output-mode"]
 default-features = false
