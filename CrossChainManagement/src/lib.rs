@@ -15,7 +15,7 @@ pub trait BlockHeaderSync {
 	#[callback(get_header_by_height_callback)]
     fn getHeaderByHeight(&self, chain_id: u64, height: u32,
         #[callback_arg] tx: &Transaction,
-        #[callback_arg] token_name: &BoxedBytes,
+        #[callback_arg] token_identifier: &BoxedBytes,
         #[callback_arg] amount: &BigUint
     );
 }
@@ -49,13 +49,13 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(addTokenToWhitelist)]
-    fn add_token_to_whitelist(&self, token_name: BoxedBytes) -> SCResult<()> {
+    fn add_token_to_whitelist(&self, token_identifier: BoxedBytes) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut token_whitelist = self.get_token_whitelist();
 
-        if !token_whitelist.contains(&token_name) {
-            token_whitelist.push(token_name);
+        if !token_whitelist.contains(&token_identifier) {
+            token_whitelist.push(token_identifier);
         }
 
         self.set_token_whitelist(&token_whitelist);
@@ -64,13 +64,13 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(removeTokenFromWhitelist)]
-    fn remove_token_from_whitelist(&self, token_name: BoxedBytes) -> SCResult<()> {
+    fn remove_token_from_whitelist(&self, token_identifier: BoxedBytes) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut token_whitelist = self.get_token_whitelist();
 
         for i in 0..token_whitelist.len() {
-            if token_whitelist[i] == token_name {
+            if token_whitelist[i] == token_identifier {
                 token_whitelist.remove(i);
 
                 break;
@@ -84,6 +84,7 @@ pub trait CrossChainManagement {
 
     // endpoints
 
+    // TODO: Accept eGLD as payment as well, and automatically wrap it if that's the case
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
@@ -97,19 +98,19 @@ pub trait CrossChainManagement {
             "token management contract address not set"
         );
 
-        let token_name = self.get_esdt_token_name_boxed();
+        let token_identifier = self.get_esdt_token_identifier_boxed();
         let esdt_value = self.get_esdt_value_big_uint();
         let tx_id = self.get_cross_chain_tx_id(to_chain_id);
 
-        if !token_name.is_empty() && esdt_value > 0 {
+        if !token_identifier.is_empty() && esdt_value > 0 {
             let token_whitelist = self.get_token_whitelist();
 
             require!(
-                token_whitelist.contains(&token_name),
+                token_whitelist.contains(&token_identifier),
                 "Token is not on whitelist. Transaction rejected"
             );
 
-            self.set_payment_for_tx(to_chain_id, tx_id, &(token_name, esdt_value));
+            self.set_payment_for_tx(to_chain_id, tx_id, &(token_identifier, esdt_value));
         }
 
         let from_contract_address = self.get_caller();
@@ -150,7 +151,7 @@ pub trait CrossChainManagement {
         from_chain_id: u64,
         height: u32,
         tx: Transaction,
-        token_name: BoxedBytes,
+        token_identifier: BoxedBytes,
         amount: BigUint,
     ) -> SCResult<()> {
         require!(
@@ -167,18 +168,18 @@ pub trait CrossChainManagement {
             "This transaction was already processed"
         );
 
-        if !token_name.is_empty() && amount > 0 {
+        if !token_identifier.is_empty() && amount > 0 {
             let token_whitelist = self.get_token_whitelist();
 
             require!(
-                token_whitelist.contains(&token_name),
+                token_whitelist.contains(&token_identifier),
                 "Token is not on whitelist. Transaction rejected"
             );
         }
 
         let contract_address = self.get_header_sync_contract_address();
         let proxy = contract_proxy!(self, &contract_address, BlockHeaderSync);
-        proxy.getHeaderByHeight(from_chain_id, height, &tx, &token_name, &amount);
+        proxy.getHeaderByHeight(from_chain_id, height, &tx, &token_identifier, &amount);
 
         Ok(())
     }
@@ -228,7 +229,7 @@ pub trait CrossChainManagement {
         &self,
         result: AsyncCallResult<Option<Header>>,
         #[callback_arg] tx: Transaction,
-        #[callback_arg] token_name: BoxedBytes,
+        #[callback_arg] token_identifier: BoxedBytes,
         #[callback_arg] amount: BigUint,
     ) {
         match result {
@@ -247,7 +248,7 @@ pub trait CrossChainManagement {
                         let tx_id = tx.tx_id;
 
                         self.set_tx_by_id(chain_id, tx_id, &tx);
-                        self.set_payment_for_tx(chain_id, tx_id, &(token_name, amount));
+                        self.set_payment_for_tx(chain_id, tx_id, &(token_identifier, amount));
                         self.set_tx_status(chain_id, tx_id, TransactionStatus::Pending);
                     }
                     None => {
@@ -285,7 +286,7 @@ pub trait CrossChainManagement {
         self.sha256(tx.get_partial_serialized().as_slice())
     }
 
-    fn get_esdt_token_name_boxed(&self) -> BoxedBytes {
+    fn get_esdt_token_identifier_boxed(&self) -> BoxedBytes {
         BoxedBytes::from(self.get_esdt_token_name())
     }
 
@@ -309,13 +310,13 @@ pub trait CrossChainManagement {
         );
 
         let tx = self.get_tx_by_id(chain_id, tx_id);
-        let (token_name, amount) = self.get_payment_for_tx(chain_id, tx_id);
+        let (token_identifier, amount) = self.get_payment_for_tx(chain_id, tx_id);
         let token_management_contract_address = self.get_token_management_contract_address();
 
         // simple transfer
         if tx.method_name.is_empty() {
             let mut serializer = HexCallDataSerializer::new(TRANSFER_ESDT_TO_ACCOUNT_ENDPOINT_NAME);
-            serializer.push_argument_bytes(token_name.as_slice());
+            serializer.push_argument_bytes(token_identifier.as_slice());
             serializer.push_argument_bytes(&amount.to_bytes_be());
             serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
             serializer.push_argument_bytes(tx.tx_hash.as_bytes());
@@ -342,7 +343,7 @@ pub trait CrossChainManagement {
             }
 
             let mut arg_buffer = ArgBuffer::new();
-            arg_buffer.push_raw_arg(token_name.as_slice());
+            arg_buffer.push_raw_arg(token_identifier.as_slice());
             arg_buffer.push_raw_arg(&amount.to_bytes_be());
             arg_buffer.push_raw_arg(tx.to_contract_address.as_bytes());
 
@@ -401,7 +402,7 @@ pub trait CrossChainManagement {
         &self,
         chain_id: u64,
         tx_id: u64,
-        token_name_amount_pair: &(BoxedBytes, BigUint),
+        token_identifier_amount_pair: &(BoxedBytes, BigUint),
     );
 
     // own chain id

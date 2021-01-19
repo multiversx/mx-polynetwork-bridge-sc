@@ -42,6 +42,7 @@ pub trait EsdtTokenManager {
     // endpoints - owner-only
 
     #[payable]
+    #[endpoint(performWrappedEgldIssue)]
     fn perform_wrapped_egld_issue(
         &self,
         initial_supply: BigUint,
@@ -96,6 +97,7 @@ pub trait EsdtTokenManager {
         Ok(())
     }
 
+    #[endpoint(burnEsdtToken)]
     fn burn_esdt_token_endpoint(
         &self,
         token_identifier: BoxedBytes,

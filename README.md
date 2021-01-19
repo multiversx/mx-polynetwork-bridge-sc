@@ -1,1 +1,1 @@
-# sc-polynetwork-bridge-rs
+# Bridge Smart Contract
