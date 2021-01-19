@@ -202,15 +202,7 @@ impl ZeroCopySource {
         }
     }
 
-    /* TO DO - and pubkey/sig */
-    pub fn next_eth_address(&mut self) -> Option<EthAddress> {
-        match self.next_bytes(ETH_ADDRESS_LEN) {
-            Some(address) => Some(EthAddress::from(address.as_slice())),
-            None => None
-        }
-    }
-
-    pub fn next_elrond_address(&mut self) -> Option<Address> {
+    pub fn next_address(&mut self) -> Option<Address> {
         match self.next_bytes(Address::len_bytes()) {
             Some(address_bytes) => Some(Address::from_slice(address_bytes.as_slice())),
             None => None

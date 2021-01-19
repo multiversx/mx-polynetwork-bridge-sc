@@ -81,11 +81,7 @@ impl ZeroCopySink {
         self.write_bytes(bytes);
     }
 
-    pub fn write_eth_address(&mut self, address: &EthAddress) {
-        self.write_bytes(address.as_slice());
-    }
-
-    pub fn write_elrond_address(&mut self, address: &Address) {
+    pub fn write_address(&mut self, address: &Address) {
         self.write_bytes(address.as_bytes());
     }
 

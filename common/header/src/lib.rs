@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{BoxedBytes, H256, Vec, derive_imports};
+use elrond_wasm::{Address, BoxedBytes, H256, Vec, derive_imports};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
@@ -28,7 +28,7 @@ pub struct Header {
 	pub consensus_payload: Option<VbftBlockInfo>, // This is serialized as: 
 		// byte(0) if value does not exist
 		// byte(1) followed by the actual value if it exists
-	pub next_book_keeper: EthAddress,
+	pub next_book_keeper: Address,
 
 	pub book_keepers: Vec<PublicKey>,
 	pub sig_data: Vec<Signature>,
@@ -123,7 +123,7 @@ impl Header {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		}
 
-		match source.next_eth_address() {
+		match source.next_address() {
 			Some(val) => next_book_keeper = val,
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
@@ -199,7 +199,7 @@ impl Header {
 			sink.write_u8(0);
 		}
 
-		sink.write_eth_address(&self.next_book_keeper);
+		sink.write_address(&self.next_book_keeper);
 
 		sink
 	}

@@ -3,10 +3,9 @@ use header::*;
 
 use peer_config::*;
 use chain_config::*;
-use util::*;
 use vbft_block_info::*;
 
-use elrond_wasm::{BoxedBytes, H256, Vec, elrond_codec::*};
+use elrond_wasm::{Address, BoxedBytes, H256, Vec, elrond_codec::*};
 
 #[test]
 fn peer_config_serde_test() {
@@ -233,7 +232,7 @@ fn header_test() {
                 max_block_change_view: 16
             })}
         ),
-        next_book_keeper: EthAddress::from(&[0u8;ETH_ADDRESS_LEN][..]),
+        next_book_keeper: Address::zero(),
         book_keepers: Vec::new(),
         sig_data: Vec::new(),
         block_hash: H256::from([0x26, 0x46, 0x0e, 0xd3, 0x76, 0x17, 0x95, 0x7c, 0x96, 0xd9, 0xab, 0xf5, 0x94, 0xa1, 0xac, 0x86, 0x5a, 0x43, 0x11, 0x02

@@ -40,9 +40,10 @@ impl Transaction {
 	fn serialize_partial(&self) -> ZeroCopySink {
 		let mut sink = ZeroCopySink::new();
 
-		sink.write_elrond_address(&self.from_contract_address);
+		// TODO: Add tx id here to prevent having the multiple transactions with the same hash
+		sink.write_address(&self.from_contract_address);
 		sink.write_u64(self.to_chain_id);
-		sink.write_elrond_address(&self.to_contract_address);
+		sink.write_address(&self.to_contract_address);
 		sink.write_var_bytes(self.method_name.as_slice());
 
 		sink.write_var_uint(self.method_args.len() as u64);
@@ -92,7 +93,7 @@ impl NestedDecode for Transaction {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_elrond_address() {
+		match source.next_address() {
 			Some(val) => from_contract_address = val,
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
@@ -102,7 +103,7 @@ impl NestedDecode for Transaction {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_elrond_address() {
+		match source.next_address() {
 			Some(val) => to_contract_address = val,
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
