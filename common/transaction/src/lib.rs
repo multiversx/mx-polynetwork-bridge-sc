@@ -20,8 +20,8 @@ pub enum TransactionStatus {
 
 #[derive(TypeAbi)]
 pub struct Transaction {
-	pub tx_hash: H256,
-	pub tx_id: u64,
+	pub hash: H256,
+	pub id: u64,
 	pub from_contract_address: Address,
 	pub to_chain_id: u64,
 	pub to_contract_address: Address,
@@ -40,7 +40,7 @@ impl Transaction {
 	fn serialize_partial(&self) -> ZeroCopySink {
 		let mut sink = ZeroCopySink::new();
 
-		// TODO: Add tx id here to prevent having the multiple transactions with the same hash
+		sink.write_u64(self.id);
 		sink.write_address(&self.from_contract_address);
 		sink.write_u64(self.to_chain_id);
 		sink.write_address(&self.to_contract_address);
@@ -60,9 +60,7 @@ impl NestedEncode for Transaction {
 	fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
 		let mut sink = ZeroCopySink::new();
 		
-		sink.write_hash(&self.tx_hash);
-		sink.write_u64(self.tx_id);
-		
+		sink.write_hash(&self.hash);
 		sink.write_bytes(self.serialize_partial().get_sink().as_slice());
 
 		dest.write(sink.get_sink().as_slice());
@@ -126,8 +124,8 @@ impl NestedDecode for Transaction {
 		};
 
 		return Ok(Transaction {
-			tx_hash,
-			tx_id,
+			hash: tx_hash,
+			id: tx_id,
 			from_contract_address,
 			to_chain_id,
 			to_contract_address,
