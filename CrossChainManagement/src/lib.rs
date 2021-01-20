@@ -6,8 +6,7 @@ use transaction::*;
 
 imports!();
 
-const TRANSFER_ESDT_TO_ACCOUNT_ENDPOINT_NAME: &[u8] = b"transferEsdtToAccount";
-const TRANSFER_ESDT_TO_CONTRACT_ENDPOINT_NAME: &[u8] = b"transferEsdtToContract";
+const TRANSFER_ESDT_ENDPOINT_NAME: &[u8] = b"transferEsdt";
 
 #[elrond_wasm_derive::callable(BlockHeaderSyncProxy)]
 pub trait BlockHeaderSync {
@@ -300,44 +299,24 @@ pub trait CrossChainManagement {
         let (token_identifier, amount) = self.get_payment_for_tx(poly_tx_hash);
         let token_management_contract_address = self.get_token_management_contract_address();
 
-        // simple transfer
-        if tx.method_name.is_empty() {
-            let mut serializer = HexCallDataSerializer::new(TRANSFER_ESDT_TO_ACCOUNT_ENDPOINT_NAME);
-            serializer.push_argument_bytes(token_identifier.as_slice());
-            serializer.push_argument_bytes(&amount.to_bytes_be());
-            serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
-            serializer.push_argument_bytes(tx.hash.as_bytes());
+        let mut serializer = HexCallDataSerializer::new(TRANSFER_ESDT_ENDPOINT_NAME);
+        serializer.push_argument_bytes(token_identifier.as_slice());
+        serializer.push_argument_bytes(&amount.to_bytes_be());
+        serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
+        serializer.push_argument_bytes(tx.hash.as_bytes());
 
-            self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
-
-            self.send_tx(
-                &token_management_contract_address,
-                &BigUint::zero(),
-                serializer.as_slice(),
-            );
+        serializer.push_argument_bytes(tx.method_name.as_slice());
+        for arg in &tx.method_args {
+            serializer.push_argument_bytes(arg.as_slice());
         }
-        // scCall
-        else {
-            let mut serializer =
-                HexCallDataSerializer::new(TRANSFER_ESDT_TO_CONTRACT_ENDPOINT_NAME);
-            serializer.push_argument_bytes(token_identifier.as_slice());
-            serializer.push_argument_bytes(&amount.to_bytes_be());
-            serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
-            serializer.push_argument_bytes(tx.hash.as_bytes());
 
-            serializer.push_argument_bytes(tx.method_name.as_slice());
-            for arg in &tx.method_args {
-                serializer.push_argument_bytes(arg.as_slice());
-            }
+        self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
 
-            self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
-
-            self.send_tx(
-                &token_management_contract_address,
-                &BigUint::zero(),
-                serializer.as_slice(),
-            );
-        }
+        self.send_tx(
+            &token_management_contract_address,
+            &BigUint::zero(),
+            serializer.as_slice(),
+        );
 
         Ok(())
     }
