@@ -475,6 +475,11 @@ pub trait EsdtTokenManager {
                 if err_code == 0 {
                     self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
                     self.set_was_token_issued(&token_identifier, true);
+
+                    // if this is empty, then this is the very first issue, which would be the wrapped eGLD token
+                    if self.is_empty_wrapped_egld_token_identifier() {
+                        self.set_wrapped_egld_token_identifier(&token_identifier);
+                    }
                 }
 
                 // nothing to do in case of error
