@@ -133,37 +133,25 @@ fn burn_esdt_token_endpoint(
 
 The following endpoints may only be called by the CrossChainManagement contract. Theoretically, we could've had those functions in the CrossChainManagement SC directly, but this allows us to separate the logic of transactions and actual payments. We won't describe these in too much detail, as they won't make too much sense until we've described their role in the flow of execution.  
 
-To perform a simple ESDTTransfer to an account, the following endpoint is used:  
+To perform a scCall with ESDT as payment, the following endpoint is called:
 
 ```
-#[endpoint(transferEsdtToAccount)]
-fn transfer_esdt_to_account_endpoint(
+#[endpoint(transferEsdtToContract)]
+#[endpoint(transferEsdt)]
+fn transfer_esdt_endpoint(
     &self,
     token_identifier: BoxedBytes,
     amount: BigUint,
     to: Address,
     poly_tx_hash: H256,
+    func_name: BoxedBytes,
+    #[var_args] args: VarArgs<BoxedBytes>,
 ) -> SCResult<()>
 ```
 
 `poly_tx_hash` is the hash of the cross-chain transaction. We need this to be able to mark transactions as executed (so the same transaction can't somehow be executed twice).  One thing to note about this and the following endpoint is that if the token is wrapped eGLD, they will automatically be unwrapped before being sent over.  
 
-To perform a scCall with ESDT as payment, the following endpoint is called:
-
-```
-#[endpoint(transferEsdtToContract)]
-fn transfer_esdt_to_contract_endpoint(
-    &self,
-    token_identifier: BoxedBytes,
-    amount: BigUint,
-    to: Address,
-    func_name: BoxedBytes,
-    args: Vec<BoxedBytes>,
-    poly_tx_hash: H256,
-) -> SCResult<()>
-```
-
-The arguments are the same as the ones for the simple transfer, except we also have a function name and the respective arguments.  
+`func_name` is left empty for simple transfers.   
 
 # CrossChainManagement Smart Contract
 
