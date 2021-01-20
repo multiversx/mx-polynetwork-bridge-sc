@@ -20,15 +20,6 @@ pub trait BlockHeaderSync {
     );
 }
 
-#[elrond_wasm_derive::callable(SimpleEsdtProxy)]
-pub trait SimpleEsdt {
-    #[rustfmt::skip]
-	#[callback(get_tx_status_callback)]
-    fn getTxStatus(&self, poly_tx_hash: &H256,
-        #[callback_arg] cb_poly_tx_hash: &H256
-    );
-}
-
 #[elrond_wasm_derive::contract(CrossChainManagementImpl)]
 pub trait CrossChainManagement {
     #[init]
@@ -82,9 +73,42 @@ pub trait CrossChainManagement {
         Ok(())
     }
 
+    // endpoints - token manager contract only
+
+    #[endpoint(completeTx)]
+    fn complete_tx(&self, poly_tx_hash: H256, tx_status: TransactionStatus) -> SCResult<()> {
+        require!(
+            !self.is_empty_token_management_contract_address(),
+            "token management contract address not set"
+        );
+        require!(
+            self.get_caller() == self.get_token_management_contract_address(),
+            "Only the token manager contract may call this"
+        );
+        require!(
+            !self.is_empty_tx_by_hash(&poly_tx_hash),
+            "Transaction does not exist"
+        );
+        require!(
+            self.get_tx_status(&poly_tx_hash) == TransactionStatus::InProgress,
+            "Transaction must be processed as Pending first"
+        );
+        require!(
+            tx_status == TransactionStatus::OutOfFunds
+                || tx_status == TransactionStatus::Executed
+                || tx_status == TransactionStatus::Rejected,
+            "Transaction status may only be set to OutOfFunds, Executed or Rejected"
+        );
+
+        self.set_tx_status(&poly_tx_hash, tx_status);
+
+        Ok(())
+    }
+
     // endpoints
 
     // TODO: Accept eGLD as payment as well, and automatically wrap it if that's the case
+    // TODO: Call EsdtTokenManager and lock the sent tokens there
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
@@ -192,34 +216,22 @@ pub trait CrossChainManagement {
 
     #[endpoint(processPendingTx)]
     fn process_pending_tx(&self, poly_tx_hash: H256) -> SCResult<()> {
-        self.process_tx(&poly_tx_hash, TransactionStatus::Pending)
+        require!(
+            self.get_tx_status(&poly_tx_hash) == TransactionStatus::Pending,
+            "Transaction is not in Pending status"
+        );
+
+        self.process_tx(&poly_tx_hash)
     }
 
     #[endpoint(retryOutOfFundsTx)]
     fn retry_out_of_funds_tx(&self, poly_tx_hash: H256) -> SCResult<()> {
-        self.process_tx(&poly_tx_hash, TransactionStatus::OutOfFunds)
-    }
-
-    #[endpoint(completeTx)]
-    fn complete_tx(&self, poly_tx_hash: H256) -> SCResult<()> {
         require!(
-            !self.is_empty_token_management_contract_address(),
-            "token management contract address not set"
-        );
-        require!(
-            !self.is_empty_tx_by_hash(&poly_tx_hash),
-            "Transaction does not exist"
-        );
-        require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::InProgress,
-            "Transaction must be processed as Pending first"
+            self.get_tx_status(&poly_tx_hash) == TransactionStatus::OutOfFunds,
+            "Transaction is not in OutOfFunds status"
         );
 
-        let token_management_contract_address = self.get_token_management_contract_address();
-        let proxy = contract_proxy!(self, &token_management_contract_address, SimpleEsdt);
-        proxy.getTxStatus(&poly_tx_hash, &poly_tx_hash);
-
-        Ok(())
+        self.process_tx(&poly_tx_hash)
     }
 
     // callbacks
@@ -258,25 +270,6 @@ pub trait CrossChainManagement {
         }
     }
 
-    #[callback]
-    fn get_tx_status_callback(
-        &self,
-        result: AsyncCallResult<TransactionStatus>,
-        #[callback_arg] cb_poly_tx_hash: H256,
-    ) {
-        match result {
-            AsyncCallResult::Ok(tx_status) => match tx_status {
-                TransactionStatus::Executed
-                | TransactionStatus::Rejected
-                | TransactionStatus::OutOfFunds => {
-                    self.set_tx_status(&cb_poly_tx_hash, tx_status);
-                }
-                _ => {}
-            },
-            AsyncCallResult::Err(_) => {}
-        }
-    }
-
     // private
 
     fn hash_transaction(&self, tx: &Transaction) -> H256 {
@@ -289,7 +282,7 @@ pub trait CrossChainManagement {
 
     // deduplicates logic from ProcessPendingTx and RetryOutOfFundsTx
     // don't need chain id, as these transactions are meant for our chain, so we use own_chain_id
-    fn process_tx(&self, poly_tx_hash: &H256, tx_status: TransactionStatus) -> SCResult<()> {
+    fn process_tx(&self, poly_tx_hash: &H256) -> SCResult<()> {
         require!(
             !self.is_empty_token_management_contract_address(),
             "token management contract address not set"
@@ -297,10 +290,6 @@ pub trait CrossChainManagement {
         require!(
             !self.is_empty_tx_by_hash(poly_tx_hash),
             "Transaction does not exist"
-        );
-        require!(
-            self.get_tx_status(poly_tx_hash) == tx_status,
-            "Transaction is not in the required status"
         );
 
         let tx = self.get_tx_by_hash(poly_tx_hash);
@@ -321,7 +310,7 @@ pub trait CrossChainManagement {
 
             self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
 
-            self.async_call(
+            self.send_tx(
                 &token_management_contract_address,
                 &BigUint::zero(),
                 serializer.as_slice(),
@@ -329,35 +318,24 @@ pub trait CrossChainManagement {
         }
         // scCall
         else {
-            let mut method_args_encoded = Vec::new();
-            if !tx.method_args.is_empty() {
-                method_args_encoded =
-                    match elrond_wasm::elrond_codec::top_encode_to_vec(&tx.method_args) {
-                        core::result::Result::Ok(encoded) => encoded,
-                        core::result::Result::Err(_) => {
-                            return sc_error!("failed to encode method arguments")
-                        }
-                    }
+            let mut serializer =
+                HexCallDataSerializer::new(TRANSFER_ESDT_TO_CONTRACT_ENDPOINT_NAME);
+            serializer.push_argument_bytes(token_identifier.as_slice());
+            serializer.push_argument_bytes(&amount.to_bytes_be());
+            serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
+            serializer.push_argument_bytes(tx.hash.as_bytes());
+
+            serializer.push_argument_bytes(tx.method_name.as_slice());
+            for arg in &tx.method_args {
+                serializer.push_argument_bytes(arg.as_slice());
             }
-
-            let mut arg_buffer = ArgBuffer::new();
-            arg_buffer.push_raw_arg(token_identifier.as_slice());
-            arg_buffer.push_raw_arg(&amount.to_bytes_be());
-            arg_buffer.push_raw_arg(tx.to_contract_address.as_bytes());
-
-            arg_buffer.push_raw_arg(tx.method_name.as_slice());
-            arg_buffer.push_raw_arg(method_args_encoded.as_slice());
-
-            arg_buffer.push_raw_arg(tx.hash.as_bytes());
 
             self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
 
-            self.execute_on_dest_context(
-                self.get_gas_left(),
+            self.send_tx(
                 &token_management_contract_address,
                 &BigUint::zero(),
-                TRANSFER_ESDT_TO_CONTRACT_ENDPOINT_NAME,
-                &arg_buffer,
+                serializer.as_slice(),
             );
         }
 

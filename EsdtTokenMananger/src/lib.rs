@@ -25,6 +25,8 @@ const WRAPPED_EGLD_DISPLAY_NAME: &[u8] = b"Wrapped eGLD";
 const WRAPPED_EGLD_TICKER: &[u8] = b"WEGLD";
 const EGLD_DECIMALS: u8 = 18;
 
+const COMPLETE_TX_ENDPOINT_NAME: &[u8] = b"completeTx";
+
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode)]
 pub struct EsdtOperation<BigUint: BigUintApi> {
     name: BoxedBytes,
@@ -130,24 +132,13 @@ pub trait EsdtTokenManager {
             "Only the cross chain management contract may call this function"
         );
 
-        let tx_status = self.get_tx_status(&poly_tx_hash);
-        require!(
-            tx_status == TransactionStatus::None || tx_status == TransactionStatus::OutOfFunds,
-            "Transaction was already processed"
-        );
-
         let total_wrapped = self.get_total_wrapped_remaining(&token_identifier);
         if total_wrapped < amount {
-            if tx_status != TransactionStatus::OutOfFunds {
-                self.set_tx_status(&poly_tx_hash, TransactionStatus::OutOfFunds);
-            }
+            self.complete_tx(&poly_tx_hash, TransactionStatus::OutOfFunds);
 
-            // we can't return SCError here, as that would erase storage changes, i.e. the status set above
+            // No need to return error here
             return Ok(());
         }
-
-        // a send_tx can not fail and has no callback, so we preemptively set it as executed
-        self.set_tx_status(&poly_tx_hash, TransactionStatus::Executed);
 
         if token_identifier != self.get_wrapped_egld_token_identifier() {
             self.transfer_esdt_to_account(&token_identifier, &amount, &to);
@@ -155,6 +146,8 @@ pub trait EsdtTokenManager {
             // automatically unwrap before sending if the token is wrapped eGLD
             self.transfer_egld_to_account(&to, &amount);
         }
+
+        self.complete_tx(&poly_tx_hash, TransactionStatus::Executed);
 
         Ok(())
     }
@@ -165,42 +158,37 @@ pub trait EsdtTokenManager {
         token_identifier: BoxedBytes,
         amount: BigUint,
         to: Address,
-        func_name: BoxedBytes,
-        args: Vec<BoxedBytes>,
         poly_tx_hash: H256,
+        func_name: BoxedBytes,
+        #[var_args] args: VarArgs<BoxedBytes>,
     ) -> SCResult<()> {
         require!(
             self.get_caller() == self.get_cross_chain_management_contract_address(),
             "Only the cross chain management contract may call this function"
         );
 
-        let tx_status = self.get_tx_status(&poly_tx_hash);
-        require!(
-            tx_status == TransactionStatus::None || tx_status == TransactionStatus::OutOfFunds,
-            "Transaction was already processed"
-        );
-
         let total_wrapped = self.get_total_wrapped_remaining(&token_identifier);
         if total_wrapped < amount {
-            if tx_status != TransactionStatus::OutOfFunds {
-                self.set_tx_status(&poly_tx_hash, TransactionStatus::OutOfFunds);
-            }
+            self.complete_tx(&poly_tx_hash, TransactionStatus::OutOfFunds);
 
-            // we can't return SCError here, as that would erase storage changes, i.e. the status set above
+            // No need to return error here
             return Ok(());
         }
-
-        // setting the status to InProgress so it can't be executed multiple times before the async-call callBack is reached
-        self.set_tx_status(&poly_tx_hash, TransactionStatus::InProgress);
 
         // save the poly_tx_hash to be used in the callback
         self.set_temporary_storage_poly_tx_hash(&self.get_tx_hash(), &poly_tx_hash);
 
         if token_identifier != self.get_wrapped_egld_token_identifier() {
-            self.transfer_esdt_to_contract(&token_identifier, &amount, &to, &func_name, &args);
+            self.transfer_esdt_to_contract(
+                &token_identifier,
+                &amount,
+                &to,
+                &func_name,
+                args.as_slice(),
+            );
         } else {
             // automatically unwrap before sending if the token is wrapped eGLD
-            self.transfer_egld_to_contract(&to, &amount, &func_name, &args);
+            self.transfer_egld_to_contract(&to, &amount, &func_name, args.as_slice());
         }
 
         Ok(())
@@ -302,7 +290,7 @@ pub trait EsdtTokenManager {
         amount: &BigUint,
         to: &Address,
         func_name: &BoxedBytes,
-        args: &Vec<BoxedBytes>,
+        args: &[BoxedBytes],
     ) {
         let mut serializer = HexCallDataSerializer::new(ESDT_TRANSFER_STRING);
         serializer.push_argument_bytes(token_identifier.as_slice());
@@ -327,7 +315,7 @@ pub trait EsdtTokenManager {
         to: &Address,
         amount: &BigUint,
         func_name: &BoxedBytes,
-        args: &Vec<BoxedBytes>,
+        args: &[BoxedBytes],
     ) {
         let mut serializer = HexCallDataSerializer::new(func_name.as_slice());
 
@@ -336,6 +324,19 @@ pub trait EsdtTokenManager {
         }
 
         self.async_call(to, amount, serializer.as_slice());
+    }
+
+    fn complete_tx(&self, poly_tx_hash: &H256, tx_status: TransactionStatus) {
+        let mut serializer = HexCallDataSerializer::new(COMPLETE_TX_ENDPOINT_NAME);
+        serializer.push_argument_bytes(poly_tx_hash.as_bytes());
+        serializer.push_argument_bytes(&[tx_status as u8]);
+
+        // set status in the cross chain management contract
+        self.send_tx(
+            &self.get_cross_chain_management_contract_address(),
+            &BigUint::zero(),
+            serializer.as_slice(),
+        );
     }
 
     fn add_total_wrapped(&self, esdt_token_name: &BoxedBytes, amount: &BigUint) {
@@ -456,7 +457,7 @@ pub trait EsdtTokenManager {
 
         // if this is empty, it means this callBack comes from an issue ESDT call
         if self.is_empty_temporary_storage_poly_tx_hash(&original_tx_hash) {
-            // if this is empty, then there is nothing to do in the callback
+            // if this is also empty, then there is nothing to do in the callback
             if self.is_empty_temporary_storage_esdt_operation(&original_tx_hash) {
                 return;
             }
@@ -497,21 +498,18 @@ pub trait EsdtTokenManager {
         let error_code_vec = &result[0];
         let poly_tx_hash = self.get_temporary_storage_poly_tx_hash(&original_tx_hash);
 
-        // Transaction must be in InProgress status, otherwise, something went wrong
-        if self.get_tx_status(&poly_tx_hash) == TransactionStatus::InProgress {
-            match u32::dep_decode(&mut error_code_vec.as_slice()) {
-                core::result::Result::Ok(err_code) => {
-                    // error code 0 means success
-                    if err_code == 0 {
-                        self.set_tx_status(&poly_tx_hash, TransactionStatus::Executed);
-                    } else {
-                        self.set_tx_status(&poly_tx_hash, TransactionStatus::Rejected);
-                    }
+        match u32::dep_decode(&mut error_code_vec.as_slice()) {
+            core::result::Result::Ok(err_code) => {
+                // error code 0 means success
+                if err_code == 0 {
+                    self.complete_tx(&poly_tx_hash, TransactionStatus::Executed);
+                } else {
+                    self.complete_tx(&poly_tx_hash, TransactionStatus::Rejected);
                 }
-                // we should never get a decode error here, but we'll set the tx to rejected if this somehow happens
-                core::result::Result::Err(_) => {
-                    self.set_tx_status(&poly_tx_hash, TransactionStatus::Rejected);
-                }
+            }
+            // we should never get a decode error here, but we'll set the tx to rejected if this somehow happens
+            core::result::Result::Err(_) => {
+                self.complete_tx(&poly_tx_hash, TransactionStatus::Rejected);
             }
         }
     }
@@ -625,15 +623,6 @@ pub trait EsdtTokenManager {
 
     #[storage_set("crossChainManagementContractAddress")]
     fn set_cross_chain_management_contract_address(&self, address: &Address);
-
-    // tx status
-
-    #[view(getTxStatus)]
-    #[storage_get("txStatus")]
-    fn get_tx_status(&self, poly_tx_hash: &H256) -> TransactionStatus;
-
-    #[storage_set("txStatus")]
-    fn set_tx_status(&self, poly_tx_hash: &H256, status: TransactionStatus);
 
     // ---------- Temporary storage for raw callbacks ----------
 
