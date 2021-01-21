@@ -360,7 +360,6 @@ pub trait EsdtTokenManager {
         serializer.push_argument_bytes(&amount.to_bytes_be());
 
         // save data for callback
-        // save data for callback
         self.set_temporary_storage_esdt_operation(
             &self.get_tx_hash(),
             &EsdtOperation {
@@ -382,7 +381,6 @@ pub trait EsdtTokenManager {
         serializer.push_argument_bytes(token_identifier.as_slice());
         serializer.push_argument_bytes(&amount.to_bytes_be());
 
-        // save data for callback
         // save data for callback
         self.set_temporary_storage_esdt_operation(
             &self.get_tx_hash(),
