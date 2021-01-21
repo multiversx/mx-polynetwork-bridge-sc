@@ -11,28 +11,28 @@ path = "src/lib.rs"
 [features]
 wasm-output-mode = ["elrond-wasm-node"]
 
-[dependencies.BlockHeaderSync]
+[dependencies.block-header-sync]
 path = "BlockHeaderSync"
 
-[dependencies.CrossChainManagement]
+[dependencies.cross-chain-management]
 path = "CrossChainManagement"
 
-[dependencies.EsdtTokenManager]
+[dependencies.esdt-token-manager]
 path = "EsdtTokenManager"
 
 [dependencies.elrond-wasm]
-version = "0.10.3"
-path = "../../elrond-wasm-rs/elrond-wasm"
+version = "0.10.2"
+path = "../elrond-wasm-rs/elrond-wasm"
 
 [dependencies.elrond-wasm-derive]
-version = "0.10.3"
-path = "../../elrond-wasm-rs/elrond-wasm-derive"
+version = "0.10.2"
+path = "../elrond-wasm-rs/elrond-wasm-derive"
 
 [dependencies.elrond-wasm-node]
-version = "0.10.3"
-path = "../../elrond-wasm-rs/elrond-wasm-node"
+version = "0.10.2"
+path = "../elrond-wasm-rs/elrond-wasm-node"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.10.3"
-path = "../../elrond-wasm-rs/elrond-wasm-debug"
+version = "0.10.2"
+path = "../elrond-wasm-rs/elrond-wasm-debug"
