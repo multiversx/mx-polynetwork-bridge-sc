@@ -8,6 +8,7 @@ imports!();
 
 const TRANSFER_ESDT_ENDPOINT_NAME: &[u8] = b"transferEsdt";
 
+const ESDT_TRANSFER_STRING: &[u8] = b"ESDTTransfer";
 const ESDT_BURN_STRING: &[u8] = b"ESDTBurn";
 
 // erd1qqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzllls8a5w6u
@@ -142,7 +143,50 @@ pub trait CrossChainManagement {
     fn refund_tokens(&self, token_identifier: BoxedBytes, refund_address: Address) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        // TODO
+        let mut refund_pool_address_list = self.get_refund_pool_address_list();
+        match refund_pool_address_list
+            .iter()
+            .position(|addr| addr == &refund_address)
+        {
+            Some(addr_index) => {
+                let mut refund_pool_tokens_list_for_address =
+                    self.get_refund_pool_tokens_list_for_address(&refund_address);
+
+                match refund_pool_tokens_list_for_address
+                    .iter()
+                    .position(|ident| ident == &token_identifier)
+                {
+                    Some(ident_index) => {
+                        refund_pool_tokens_list_for_address.remove(ident_index);
+
+                        // if this was the last token for this address, then we remove the address from the whole list
+                        if refund_pool_tokens_list_for_address.is_empty() {
+                            refund_pool_address_list.remove(addr_index);
+
+                            self.set_refund_pool_address_list(&refund_pool_address_list);
+                        }
+
+                        self.set_refund_pool_tokens_list_for_address(
+                            &refund_address,
+                            &refund_pool_tokens_list_for_address,
+                        );
+                    }
+                    None => return sc_error!("token is not on the address' refund list"),
+                }
+            }
+            None => return sc_error!("address is not on refund list"),
+        }
+
+        let refund_amount =
+            self.get_refund_amount_for_token_for_address(&token_identifier, &refund_address);
+
+        self.set_refund_amount_for_token_for_address(
+            &token_identifier,
+            &refund_address,
+            &BigUint::zero(),
+        );
+
+        self.refund_esdt_token(&token_identifier, &refund_address, &refund_amount);
 
         Ok(())
     }
@@ -511,6 +555,19 @@ pub trait CrossChainManagement {
             &BigUint::zero(),
             serializer.as_slice(),
         );
+    }
+
+    fn refund_esdt_token(
+        &self,
+        token_identifier: &BoxedBytes,
+        refund_address: &Address,
+        amount: &BigUint,
+    ) {
+        let mut serializer = HexCallDataSerializer::new(ESDT_TRANSFER_STRING);
+        serializer.push_argument_bytes(token_identifier.as_slice());
+        serializer.push_argument_bytes(&amount.to_bytes_be());
+
+        self.send_tx(refund_address, &BigUint::zero(), serializer.as_slice());
     }
 
     // events
