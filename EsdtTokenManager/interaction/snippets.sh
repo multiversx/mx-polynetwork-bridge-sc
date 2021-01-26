@@ -24,15 +24,11 @@ deploy() {
 }
 
 issueWrappedEgld() {
-    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=2000000000 --function="performWrappedEgldIssue" --value=5000000000000000000 --arguments 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="performWrappedEgldIssue" --value=5000000000000000000 --arguments 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
 getWrappedEgldTokenIdentifier() {
     #local as_hex=$(
     erdpy --verbose contract query ${ADDRESS} --function="getWrappedEgldTokenIdentifier" --proxy=${PROXY} #| jq '.hex')
     #echo "$as_hex"
-}
-
-getErrCode() {
-    erdpy --verbose contract query ${ADDRESS} --function="getErrCode" --proxy=${PROXY}
 }

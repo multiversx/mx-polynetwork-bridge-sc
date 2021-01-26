@@ -70,10 +70,6 @@ getWrappedEgldTokenIdentifierExternal() {
     getWrappedEgldTokenIdentifier
 }
 
-getErrCodeExternal() {
-    source ../EsdtTokenManager/interaction/snippets.sh
-    getErrCode
-}
 
 ### Scnearios
 
