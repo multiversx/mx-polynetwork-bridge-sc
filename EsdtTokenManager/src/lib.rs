@@ -21,7 +21,7 @@ const ESDT_ISSUE_STRING: &[u8] = b"issue";
 const ESDT_MINT_STRING: &[u8] = b"mint";
 const ESDT_BURN_STRING: &[u8] = b"ESDTBurn";
 
-const WRAPPED_EGLD_DISPLAY_NAME: &[u8] = b"Wrapped eGLD";
+const WRAPPED_EGLD_DISPLAY_NAME: &[u8] = b"WrappedEGLD";
 const WRAPPED_EGLD_TICKER: &[u8] = b"WEGLD";
 const EGLD_DECIMALS: u8 = 18;
 
@@ -465,7 +465,9 @@ pub trait EsdtTokenManager {
 
     fn perform_esdt_issue_callback(&self, result: &Vec<Vec<u8>>, initial_supply: &BigUint) {
         let error_code_vec = &result[0];
-        let token_identifier = BoxedBytes::from(result[1].as_slice());
+        
+        // callback is called with ESDTTransfer of the newly issued token, with the amount requested, so we can get the token identifier from the call data
+        let token_identifier = self.get_esdt_token_identifier_boxed();
 
         match u32::dep_decode(&mut error_code_vec.as_slice()) {
             core::result::Result::Ok(err_code) => {
