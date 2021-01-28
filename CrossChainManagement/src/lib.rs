@@ -261,7 +261,6 @@ pub trait CrossChainManagement {
 
     // endpoints
 
-    // TODO: Accept eGLD as payment as well, and automatically wrap it if that's the case
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
@@ -309,7 +308,6 @@ pub trait CrossChainManagement {
 
         self.set_tx_by_hash(&tx.hash, &tx);
         // TODO: Add a way to mark these as Executed/Rejected by an approved address
-        // TODO: Burn tokens if Executed, refund if Rejected
         self.set_tx_status(&tx.hash, TransactionStatus::Pending);
         self.set_cross_chain_tx_id(to_chain_id, tx_id + 1);
 

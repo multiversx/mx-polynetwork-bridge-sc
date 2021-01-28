@@ -5,13 +5,14 @@ PROXY=http://localhost:7950 # For public testnet, replace with https://testnet-g
 CHAIN_ID=local-testnet
 PROJECT_HARDCODED="/home/elrond/sc-polynetwork-bridge-rs/EsdtTokenManager"
 
-CROSS_CHAIN_MANAGEMENT_ADDRESS=$(erdpy data load --key=address-testnet-crossChainManagement)
-CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED=$(erdpy wallet bech32 --decode ${CROSS_CHAIN_MANAGEMENT_ADDRESS})
+# CROSS_CHAIN_MANAGEMENT_ADDRESS=$(erdpy data load --key=address-testnet-crossChainManagement)
+# CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED=$(erdpy wallet bech32 --decode ${CROSS_CHAIN_MANAGEMENT_ADDRESS})
 
 # To get tx result, go to http://localhost:7950/transaction/tx_hash_here?withResults=true
 
 deploy() {
-    erdpy --verbose contract deploy --project=${PROJECT_HARDCODED} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=200000000 --arguments 0x${CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED} --send --outfile="deploy-testnet.interaction.json" --proxy=${PROXY} --chain=${CHAIN_ID} || return
+    # --arguments 0x${CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED}
+    erdpy --verbose contract deploy --project=${PROJECT_HARDCODED} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=200000000 --send --outfile="deploy-testnet.interaction.json" --proxy=${PROXY} --chain=${CHAIN_ID} || return
 
     TRANSACTION=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emitted_tx']['hash']")
     ADDRESS=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emitted_tx']['address']")
@@ -24,11 +25,25 @@ deploy() {
 }
 
 issueWrappedEgld() {
-    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="performWrappedEgldIssue" --value=5000000000000000000 --arguments 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=100000000 --function="performWrappedEgldIssue" --value=5000000000000000000 --arguments 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
 getWrappedEgldTokenIdentifier() {
     #local as_hex=$(
     erdpy --verbose contract query ${ADDRESS} --function="getWrappedEgldTokenIdentifier" --proxy=${PROXY} #| jq '.hex')
     #echo "$as_hex"
+}
+
+wrapEgld() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="wrapEgld" --value=5000000000000000000 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# ESDT payment
+unwrapEgld() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="unwrapEgld" --arguments 0x455344545472616e73666572 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# arguments: token identifier, amount
+unwrapEgld() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="mintEsdtToken" --arguments $1 $2 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }

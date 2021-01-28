@@ -36,10 +36,12 @@ pub struct EsdtOperation<BigUint: BigUintApi> {
 
 #[elrond_wasm_derive::contract(EsdtTokenManagerImpl)]
 pub trait EsdtTokenManager {
-    #[init]
+    /*#[init]
     fn init(&self, cross_chain_management_address: Address) {
         self.set_cross_chain_management_contract_address(&cross_chain_management_address);
-    }
+    }*/
+    #[init]
+    fn init(&self) {}
 
     // endpoints - owner-only
 
@@ -402,6 +404,8 @@ pub trait EsdtTokenManager {
 
     #[callback_raw]
     fn callback_raw(&self, result: Vec<Vec<u8>>) {
+        // "0" is serialized as "nothing", so len == 0 for the first item is error code of 0, which means success
+        let success = result[0].len() == 0;
         let original_tx_hash = self.get_tx_hash();
 
         // if this is empty, it means this callBack comes from an issue ESDT call
@@ -414,129 +418,84 @@ pub trait EsdtTokenManager {
             let esdt_operation = self.get_temporary_storage_esdt_operation(&original_tx_hash);
 
             if esdt_operation.name.as_slice() == ESDT_ISSUE_STRING {
-                self.perform_esdt_issue_callback(&result, &esdt_operation.amount);
+                self.perform_esdt_issue_callback(success, &esdt_operation.amount);
             } else if esdt_operation.name.as_slice() == ESDT_MINT_STRING {
                 self.perform_esdt_mint_callback(
-                    &result,
+                    success,
                     &esdt_operation.token_identifier,
                     &esdt_operation.amount,
                 );
             } else if esdt_operation.name.as_slice() == ESDT_BURN_STRING {
                 self.perform_esdt_burn_callback(
-                    &result,
+                    success,
                     &esdt_operation.token_identifier,
                     &esdt_operation.amount,
                 );
             }
 
             self.clear_temporary_storage_esdt_operation(&original_tx_hash);
-
-            return;
         } else {
-            self.perform_async_callback(&result, &original_tx_hash);
+            self.perform_async_callback(success, &original_tx_hash);
 
             self.clear_temporary_storage_poly_tx_hash(&original_tx_hash);
         }
     }
 
-    fn perform_async_callback(
-        &self,
-        result: &Vec<Vec<u8>>,
-        original_tx_hash: &H256,
-    ) {
-        let error_code_vec = &result[0];
+    fn perform_async_callback(&self, success: bool, original_tx_hash: &H256) {
         let poly_tx_hash = self.get_temporary_storage_poly_tx_hash(&original_tx_hash);
 
-        match u32::dep_decode(&mut error_code_vec.as_slice()) {
-            core::result::Result::Ok(err_code) => {
-                // error code 0 means success
-                if err_code == 0 {
-                    self.complete_tx(&poly_tx_hash, TransactionStatus::Executed);
-                } else {
-                    self.complete_tx(&poly_tx_hash, TransactionStatus::Rejected);
-                }
-            }
-            // we should never get a decode error here, but we'll set the tx to rejected if this somehow happens
-            core::result::Result::Err(_) => {
-                self.complete_tx(&poly_tx_hash, TransactionStatus::Rejected);
-            }
+        if success {
+            self.complete_tx(&poly_tx_hash, TransactionStatus::Executed);
+        } else {
+            self.complete_tx(&poly_tx_hash, TransactionStatus::Rejected);
         }
     }
 
-    fn perform_esdt_issue_callback(&self, result: &Vec<Vec<u8>>, initial_supply: &BigUint) {
-        let error_code_vec = &result[0];
-        
+    fn perform_esdt_issue_callback(&self, success: bool, initial_supply: &BigUint) {
         // callback is called with ESDTTransfer of the newly issued token, with the amount requested, so we can get the token identifier from the call data
         let token_identifier = self.get_esdt_token_identifier_boxed();
 
-        match u32::dep_decode(&mut error_code_vec.as_slice()) {
-            core::result::Result::Ok(err_code) => {
-                // error code 0 means success
-                if err_code == 0 {
-                    self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
-                    self.set_was_token_issued(&token_identifier, true);
+        if success {
+            self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
+            self.set_was_token_issued(&token_identifier, true);
 
-                    // if this is empty, then this is the very first issue, which would be the wrapped eGLD token
-                    if self.is_empty_wrapped_egld_token_identifier() {
-                        self.set_wrapped_egld_token_identifier(&token_identifier);
-                    }
-                }
-
-                // nothing to do in case of error
+            // if this is empty, then this is the very first issue, which would be the wrapped eGLD token
+            if self.is_empty_wrapped_egld_token_identifier() {
+                self.set_wrapped_egld_token_identifier(&token_identifier);
             }
-            // we should never get a decode error here, but either way, nothing to do if this fails
-            core::result::Result::Err(_) => {}
         }
+        // nothing to do in case of error
     }
 
     fn perform_esdt_mint_callback(
         &self,
-        result: &Vec<Vec<u8>>,
+        success: bool,
         token_identifier: &BoxedBytes,
         amount: &BigUint,
     ) {
-        let error_code_vec = &result[0];
-
-        match u32::dep_decode(&mut error_code_vec.as_slice()) {
-            core::result::Result::Ok(err_code) => {
-                // error code 0 means success
-                if err_code == 0 {
-                    let mut total_wrapped_remaining =
-                        self.get_total_wrapped_remaining(&token_identifier);
-                    total_wrapped_remaining += amount;
-                    self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
-                }
-
-                // nothing to do in case of error
-            }
-            // we should never get a decode error here, but either way, nothing to do if this fails
-            core::result::Result::Err(_) => {}
+        if success {
+            let mut total_wrapped_remaining = self.get_total_wrapped_remaining(&token_identifier);
+            total_wrapped_remaining += amount;
+            self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
         }
+
+        // nothing to do in case of error
     }
 
     fn perform_esdt_burn_callback(
         &self,
-        result: &Vec<Vec<u8>>,
+        success: bool,
         token_identifier: &BoxedBytes,
         amount: &BigUint,
     ) {
-        let error_code_vec = &result[0];
-
-        match u32::dep_decode(&mut error_code_vec.as_slice()) {
-            core::result::Result::Ok(err_code) => {
-                // error code 0 means success
-                if err_code == 0 {
-                    let mut total_wrapped_remaining =
-                        self.get_total_wrapped_remaining(&token_identifier);
-                    total_wrapped_remaining -= amount;
-                    self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
-                }
-
-                // nothing to do in case of error
-            }
-            // we should never get a decode error here, but either way, nothing to do if this fails
-            core::result::Result::Err(_) => {}
+        // error code 0 means success
+        if success {
+            let mut total_wrapped_remaining = self.get_total_wrapped_remaining(&token_identifier);
+            total_wrapped_remaining -= amount;
+            self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
         }
+
+        // nothing to do in case of error
     }
 
     // STORAGE

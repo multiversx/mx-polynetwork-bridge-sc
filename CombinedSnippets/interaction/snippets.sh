@@ -12,30 +12,22 @@ storeIncrementNonce() {
 
 ### BlockHeaderSync setup. It currently doesn't do any checking, so it's pretty much a mock at this point.
 
-deployBlockHeaderSync() {
+deployAndSetupBlockHeaderSync() {
     loadNonce
     source ../BlockHeaderSync/interaction/snippets.sh
     deploy
     storeIncrementNonce
-}
 
-setupBlockHeaderSync() {
+    sleep 10
+
     loadNonce
-    source ../BlockHeaderSync/interaction/snippets.sh
     syncGenesisHeader
     storeIncrementNonce
 
-    loadNonce
-    source ../BlockHeaderSync/interaction/snippets.sh
-    syncBlockHeader
-    storeIncrementNonce
-}
+    sleep 10
 
-getHeaderByHeightExternal() {
-    source ../BlockHeaderSync/interaction/snippets.sh
     getHeaderByHeight
 }
-
 
 deployCrossChainManagement() {
     loadNonce
@@ -45,28 +37,26 @@ deployCrossChainManagement() {
 }
 
 deployEsdtTokenManager() {
-    loadNonce
     source ../EsdtTokenManager/interaction/snippets.sh
+    
+    loadNonce
     deploy
     storeIncrementNonce
-}
 
-setupCrossChainManagementAndEsdtTokenManager() {
-    loadNonce
-    source ../CrossChainManagement/interaction/snippets.sh
-    setTokenManagerAddress
-    storeIncrementNonce
+    sleep 10
 
     loadNonce
-    source ../EsdtTokenManager/interaction/snippets.sh
     issueWrappedEgld
     storeIncrementNonce
+
+    sleep 40
+
+    getWrappedEgldTokenIdentifier
 }
 
-getWrappedEgldTokenIdentifierExternal() {
+getWrappedEgldTokenIdentifierExternal()
+{
     source ../EsdtTokenManager/interaction/snippets.sh
-    #echo "Wrapped eGLD token identifier:"
-    #echo $(getWrappedEgldTokenIdentifier)
     getWrappedEgldTokenIdentifier
 }
 
