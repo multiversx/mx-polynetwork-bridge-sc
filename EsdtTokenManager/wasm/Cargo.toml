@@ -21,8 +21,7 @@ features = ["wasm-output-mode"]
 default-features = false
 
 [dependencies.elrond-wasm-output]
-version = "0.10.3"
-path = "../../../elrond-wasm-rs/elrond-wasm-output"
+version = "0.10.5"
 features = ["wasm-output-mode"]
 
 [workspace]

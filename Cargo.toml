@@ -21,18 +21,14 @@ path = "CrossChainManagement"
 path = "EsdtTokenManager"
 
 [dependencies.elrond-wasm]
-version = "0.10.2"
-path = "../elrond-wasm-rs/elrond-wasm"
+version = "0.10.5"
 
 [dependencies.elrond-wasm-derive]
-version = "0.10.2"
-path = "../elrond-wasm-rs/elrond-wasm-derive"
+version = "0.10.5"
 
 [dependencies.elrond-wasm-node]
-version = "0.10.2"
-path = "../elrond-wasm-rs/elrond-wasm-node"
+version = "0.10.5"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.10.2"
-path = "../elrond-wasm-rs/elrond-wasm-debug"
+version = "0.10.5"
