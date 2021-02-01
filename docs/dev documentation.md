@@ -97,9 +97,7 @@ The `wrap` endpoint accepts eGLD as payment and sends back the same amount of wr
 
 ## ESDT Operations
 
-The contract can also perform other ESDT operations, specifically issue, mint and burn, although not all of them are available without restrictions. Only the contract owner may issue or burn tokens owned by the contract, but anyone may mint more tokens (although these tokens will still be locked in the contract). These are done through the following endpoints:  
-
-### Owner-only
+The contract can also perform other ESDT operations, specifically issue, mint and burn, although only the contract owner can initiate them. These are done through the following endpoints:  
 
 The owner may issue additional token types as more blockchains are linked to Elrond, using the following endpoint:
 
@@ -117,6 +115,17 @@ fn issue_esdt_token_endpoint(
 ```
 
 The process is similar to the one used for issueing the initial wrapped eGLD. The only difference is this endpoint provides more customization concerning the token's attributes. For wrapped eGLD, we use "Wrapped eGLD" as display name, "WEGLD" as ticker, and 18 decimals.  
+
+To mint additional tokens, the following endpoint is used:
+
+```
+#[endpoint(mintEsdtToken)]
+fn mint_esdt_token_endpoint(
+    &self,
+    token_identifier: BoxedBytes,
+    amount: BigUint,
+) -> SCResult<()>
+```
 
 The owner may also burn tokens owned by the smart contract if they deem it necessary (important: The owner _cannot_ burn tokens owned by other accounts, but these accounts may burn their tokens at will by directly sending the required transaction to the system smart contract).  
 
