@@ -24,26 +24,42 @@ deploy() {
     echo "Smart contract address: ${ADDRESS}"
 }
 
+# arguments: amount
 issueWrappedEgld() {
-    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=100000000 --function="performWrappedEgldIssue" --value=5000000000000000000 --arguments 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=100000000 --function="performWrappedEgldIssue" --value=5000000000000000000 --arguments $1 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
 getWrappedEgldTokenIdentifier() {
-    #local as_hex=$(
-    erdpy --verbose contract query ${ADDRESS} --function="getWrappedEgldTokenIdentifier" --proxy=${PROXY} #| jq '.hex')
-    #echo "$as_hex"
+    erdpy --verbose contract query ${ADDRESS} --function="getWrappedEgldTokenIdentifier" --proxy=${PROXY}
 }
 
+# arguments: token identifier
+getTokenAmount() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTotalWrappedRemaining" --arguments $1 --proxy=${PROXY}
+}
+
+# arguments: token identifier
+wasTokenIssued() {
+    erdpy --verbose contract query ${ADDRESS} --function="wasTokenIssued" --arguments $1 --proxy=${PROXY}
+}
+
+# arguments: eGLD payment. 1 eGLD per 1 wrapped eGLD (Note: must pass with 18 zeroes)
 wrapEgld() {
-    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="wrapEgld" --value=5000000000000000000 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="wrapEgld" --value=$1 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
 # ESDT payment
+# arguments: token identifier, amount
 unwrapEgld() {
-    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="unwrapEgld" --arguments 0x455344545472616e73666572 0x05 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="unwrapEgld" --arguments $1 $2 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
 # arguments: token identifier, amount
-unwrapEgld() {
+mintTokens() {
     erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="mintEsdtToken" --arguments $1 $2 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# arguments: token identifier, amount
+burnTokens() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="burnEsdtToken" --arguments $1 $2 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }

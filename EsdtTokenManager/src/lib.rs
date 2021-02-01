@@ -101,6 +101,23 @@ pub trait EsdtTokenManager {
         Ok(())
     }
 
+    #[endpoint(mintEsdtToken)]
+    fn mint_esdt_token_endpoint(
+        &self,
+        token_identifier: BoxedBytes,
+        amount: BigUint,
+    ) -> SCResult<()> {
+        require!(
+            self.get_was_token_issued(&token_identifier),
+            "Token must be issued first"
+        );
+        require!(amount > 0, "Amount minted must be more than 0");
+
+        self.mint_esdt_token(&token_identifier, &amount);
+
+        Ok(())
+    }
+
     #[endpoint(burnEsdtToken)]
     fn burn_esdt_token_endpoint(
         &self,
@@ -208,23 +225,6 @@ pub trait EsdtTokenManager {
 
         // 1 wrapped eGLD = 1 eGLD, so we pay back the same amount
         self.send_tx(&self.get_caller(), &wrapped_egld_payment, b"unwrapping");
-
-        Ok(())
-    }
-
-    #[endpoint(mintEsdtToken)]
-    fn mint_esdt_token_endpoint(
-        &self,
-        token_identifier: BoxedBytes,
-        amount: BigUint,
-    ) -> SCResult<()> {
-        require!(
-            self.get_was_token_issued(&token_identifier),
-            "Token must be issued first"
-        );
-        require!(amount > 0, "Amount minted must be more than 0");
-
-        self.mint_esdt_token(&token_identifier, &amount);
 
         Ok(())
     }
@@ -488,7 +488,6 @@ pub trait EsdtTokenManager {
         token_identifier: &BoxedBytes,
         amount: &BigUint,
     ) {
-        // error code 0 means success
         if success {
             let mut total_wrapped_remaining = self.get_total_wrapped_remaining(&token_identifier);
             total_wrapped_remaining -= amount;
