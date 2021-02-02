@@ -1,7 +1,7 @@
 ### Common
 
 # update after token manager deploy, "0x" followed by the "hex" part
-WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d333135356638
+WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d303663636338
 
 loadNonce() {
     alice_nonce=$(erdpy data load --key=alice_nonce)
@@ -49,7 +49,7 @@ deployEsdtTokenManager() {
     sleep 10
 
     loadNonce
-    issueWrappedEgld 0x32 # 50 wrapped eGLD issue
+    issueWrappedEgld 0x02B5E3AF16B1880000 # 50 wrapped eGLD issue (50 * 10^18)
     storeIncrementNonce
 
     sleep 40
@@ -64,18 +64,18 @@ queryEsdtTokenManager() {
     echo "Wrapped eGLD token identifier:"
     getWrappedEgldTokenIdentifier
 
-    echo "Was wrapped eGLD issued? (1 = true, 0 = false)"
-    wasTokenIssued ${WRAPPED_EGLD_TOKEN_IDENTIFIER}
-
     echo "Total wrapped eGLD:"
     getTokenAmount ${WRAPPED_EGLD_TOKEN_IDENTIFIER}
+
+    echo "Total locked eGLD:"
+    getLockedEgldBalance
 }
 
 mintMoreWrappedEgld() {
     source ../EsdtTokenManager/interaction/snippets.sh
 
     loadNonce
-    mintTokens ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x0A
+    mintTokens ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x8AC7230489E80000 # 10 wrapped eGLD (10 * 10^18)
     storeIncrementNonce
 
     sleep 40
@@ -88,7 +88,7 @@ burnWrappedEgld() {
     source ../EsdtTokenManager/interaction/snippets.sh
 
     loadNonce
-    burnTokens ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x05
+    burnTokens ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x8AC7230489E80000 # 10 wrapped eGLD (10 * 10^18)
     storeIncrementNonce
 
     sleep 40
@@ -101,7 +101,33 @@ burnWrappedEgld() {
 
 # Scenario 1
 
-# Alice wraps 10 eGLD and sends to an offchain account
+# Alice wraps 10 eGLD
+# Alice unwraps 5 eGLD
+# Alice sends the remaining 5 eGLD to an offchain account
+
+wrapTenEgld() {
+    source ../EsdtTokenManager/interaction/snippets.sh
+
+    loadNonce
+    wrapEgld 10000000000000000000 # 10 * 10^18
+    storeIncrementNonce
+
+    sleep 20
+
+    queryEsdtTokenManager
+}
+
+unwrapFiveEgld() {
+    source ../EsdtTokenManager/interaction/snippets.sh
+
+    loadNonce
+    unwrapEgld ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x4563918244F40000 # 5 * 10^18
+    storeIncrementNonce
+
+    sleep 20
+
+    queryEsdtTokenManager
+}
 
 # Scenario 2
 

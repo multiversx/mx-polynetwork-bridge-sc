@@ -204,11 +204,11 @@ pub trait EsdtTokenManager {
 
     #[endpoint(unwrapEgld)]
     fn unwrap_egld(&self) -> SCResult<()> {
-        let esdt_token_name = self.get_esdt_token_identifier_boxed();
+        let token_identifier = self.get_esdt_token_identifier_boxed();
         let wrapped_egld_token_identifier = self.get_wrapped_egld_token_identifier();
 
         require!(
-            esdt_token_name == wrapped_egld_token_identifier,
+            token_identifier == wrapped_egld_token_identifier,
             "Wrong esdt token"
         );
 
@@ -227,6 +227,11 @@ pub trait EsdtTokenManager {
         self.send_tx(&self.get_caller(), &wrapped_egld_payment, b"unwrapping");
 
         Ok(())
+    }
+
+    #[view(getLockedEgldBalance)]
+    fn get_locked_egld_balance() -> BigUint {
+        self.get_sc_balance()
     }
 
     // private
@@ -292,16 +297,16 @@ pub trait EsdtTokenManager {
         );
     }
 
-    fn add_total_wrapped(&self, esdt_token_name: &BoxedBytes, amount: &BigUint) {
-        let mut total_wrapped = self.get_total_wrapped_remaining(esdt_token_name);
+    fn add_total_wrapped(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+        let mut total_wrapped = self.get_total_wrapped_remaining(token_identifier);
         total_wrapped += amount;
-        self.set_total_wrapped_remaining(esdt_token_name, &total_wrapped);
+        self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
     }
 
-    fn substract_total_wrapped(&self, esdt_token_name: &BoxedBytes, amount: &BigUint) {
-        let mut total_wrapped = self.get_total_wrapped_remaining(esdt_token_name);
+    fn substract_total_wrapped(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+        let mut total_wrapped = self.get_total_wrapped_remaining(token_identifier);
         total_wrapped -= amount;
-        self.set_total_wrapped_remaining(esdt_token_name, &total_wrapped);
+        self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
     }
 
     fn issue_esdt_token(
@@ -474,9 +479,7 @@ pub trait EsdtTokenManager {
         amount: &BigUint,
     ) {
         if success {
-            let mut total_wrapped_remaining = self.get_total_wrapped_remaining(&token_identifier);
-            total_wrapped_remaining += amount;
-            self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
+            self.add_total_wrapped(token_identifier, amount);
         }
 
         // nothing to do in case of error
@@ -489,9 +492,7 @@ pub trait EsdtTokenManager {
         amount: &BigUint,
     ) {
         if success {
-            let mut total_wrapped_remaining = self.get_total_wrapped_remaining(&token_identifier);
-            total_wrapped_remaining -= amount;
-            self.set_total_wrapped_remaining(&token_identifier, &total_wrapped_remaining);
+            self.substract_total_wrapped(token_identifier, amount);
         }
 
         // nothing to do in case of error

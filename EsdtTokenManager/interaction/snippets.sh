@@ -51,7 +51,7 @@ wrapEgld() {
 # ESDT payment
 # arguments: token identifier, amount
 unwrapEgld() {
-    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="unwrapEgld" --arguments $1 $2 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="ESDTTransfer" --arguments $1 $2 0x756e7772617045676c64 --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
 # arguments: token identifier, amount
@@ -62,4 +62,8 @@ mintTokens() {
 # arguments: token identifier, amount
 burnTokens() {
     erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=1000000000 --function="burnEsdtToken" --arguments $1 $2 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+getLockedEgldBalance() {
+    erdpy --verbose contract query ${ADDRESS} --function="getLockedEgldBalance" --proxy=${PROXY}
 }
