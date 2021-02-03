@@ -390,17 +390,6 @@ pub trait CrossChainManagement {
         self.process_tx(&poly_tx_hash)
     }
 
-    // views
-
-    #[view(getTxByHash)]
-    fn get_tx_by_hash_or_none(&self, poly_tx_hash: H256) -> Option<Transaction> {
-        if !self.is_empty_tx_by_hash(&poly_tx_hash) {
-            Some(self.get_tx_by_hash(&poly_tx_hash))
-        } else {
-            None
-        }
-    }
-
     #[endpoint(getNextPendingCrossChainTx)]
     fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
         let list_len = self.get_pending_cross_chain_tx_length();
@@ -411,6 +400,17 @@ pub trait CrossChainManagement {
 
             self.set_pending_cross_chain_tx_current_index(current_index + 1);
 
+            Some(self.get_tx_by_hash(&poly_tx_hash))
+        } else {
+            None
+        }
+    }
+
+    // views
+
+    #[view(getTxByHash)]
+    fn get_tx_by_hash_or_none(&self, poly_tx_hash: H256) -> Option<Transaction> {
+        if !self.is_empty_tx_by_hash(&poly_tx_hash) {
             Some(self.get_tx_by_hash(&poly_tx_hash))
         } else {
             None
