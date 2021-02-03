@@ -1,7 +1,10 @@
 ### Common
 
 # update after token manager deploy, "0x" followed by the "hex" part
-WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d303663636338
+WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d653162653036
+
+# update after getting next pending tx
+POLY_TX_HASH=0x00
 
 loadNonce() {
     alice_nonce=$(erdpy data load --key=alice_nonce)
@@ -83,6 +86,8 @@ finalizeSetup() {
 
 ### Test functions. Can be called in any order to test particular functionalities.
 
+# Esdt Token Manager
+
 queryEsdtTokenManager() {
     source ../EsdtTokenManager/interaction/snippets.sh
 
@@ -122,18 +127,22 @@ burnWrappedEgld() {
     getTokenAmount ${WRAPPED_EGLD_TOKEN_IDENTIFIER}
 }
 
-createCrossChainTransaction() {
+# Cross Chain Management
+
+getNextPendingCrossChainTransation() {
     source ../CrossChainManagement/interaction/snippets.sh
 
     loadNonce
-    createCrossChainTx ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x4563918244F40000 0x0A 0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1 0x 0x  # 10 wrapped eGLD (10 * 10^18)
+    getNextPendingTx
     storeIncrementNonce
 }
 
-queryCrossChainManager() {
+getTransactionByHash() {
     source ../CrossChainManagement/interaction/snippets.sh
 
-    echo "Tx by hash:"
+    loadNonce
+    getTxByHash ${POLY_TX_HASH}
+    storeIncrementNonce
 }
 
 ### Scnearios
@@ -142,7 +151,7 @@ queryCrossChainManager() {
 
 # Alice wraps 10 eGLD
 # Alice unwraps 5 eGLD
-# Alice sends the remaining 5 eGLD to an offchain account
+# Alice sends the remaining 5 wrapped eGLD to an offchain account
 
 wrapTenEgld() {
     source ../EsdtTokenManager/interaction/snippets.sh
@@ -166,6 +175,14 @@ unwrapFiveEgld() {
     sleep 20
 
     queryEsdtTokenManager
+}
+
+sendFiveEgldToAnotherChain() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
+    createCrossChainTx ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x4563918244F40000 0x0A 0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1 0x 0x  # 5 wrapped eGLD (5 * 10^18)
+    storeIncrementNonce
 }
 
 # Scenario 2

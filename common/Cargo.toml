@@ -14,8 +14,14 @@ wasm-output-mode = ["elrond-wasm-node"]
 [dependencies.header]
 path = "header"
 
+[dependencies.transaction]
+path = "transaction"
+
 [dependencies.util]
 path = "util"
+
+[dependencies.hex]
+version = "0.4.2"
 
 [dependencies.elrond-wasm]
 version = "0.10.5"
