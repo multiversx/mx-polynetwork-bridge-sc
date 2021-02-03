@@ -32,7 +32,22 @@ setTokenManagerAddress() {
     erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=50000000 --function="setTokenManagementContractAddress" --arguments 0x${ESDT_TOKEN_MANAGER_ADDRESS_DECODED} --send --proxy=${PROXY} --chain=${CHAIN_ID}
 }
 
-# token name received as argument $1
+# Arguments: Token identifier
 addTokenToWhitelist() {
     erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=50000000 --function="addTokenToWhitelist" --arguments $1 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# Arguments: Address
+addAddressToApprovedlist() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=50000000 --function="addAddressToApprovedlist" --arguments $1 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# Arguments: token identifier, amount, target chain id, destination contract address, method name, method args
+createCrossChainTx() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=50000000 --function="ESDTTransfer" --arguments $1 $2 0x63726561746543726f7373436861696e5478 $3 $4 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# Arguments: poly tx hash
+getTxByHash() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTxByHash" --arguments $1 --proxy=${PROXY}
 }

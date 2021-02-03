@@ -13,11 +13,12 @@ storeIncrementNonce() {
     erdpy data store --key=alice_nonce --value=$((alice_nonce + 1))
 }
 
-### BlockHeaderSync setup. It currently doesn't do any checking, so it's pretty much a mock at this point.
+# SETUP - To be done in this exact order
 
 deployAndSetupBlockHeaderSync() {
-    loadNonce
     source ../BlockHeaderSync/interaction/snippets.sh
+
+    loadNonce
     deploy
     storeIncrementNonce
 
@@ -33,12 +34,14 @@ deployAndSetupBlockHeaderSync() {
 }
 
 deployCrossChainManagement() {
-    loadNonce
     source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
     deploy
     storeIncrementNonce
 }
 
+# Remember to update WRAPPED_EGLD_TOKEN_IDENTIFIER variable after deployment is complete
 deployEsdtTokenManager() {
     source ../EsdtTokenManager/interaction/snippets.sh
     
@@ -57,6 +60,28 @@ deployEsdtTokenManager() {
     echo "Wrapped eGLD token identifier:"
     getWrappedEgldTokenIdentifier
 }
+
+finalizeSetup() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
+    setTokenManagerAddress
+    storeIncrementNonce
+
+    sleep 10
+
+    loadNonce
+    addTokenToWhitelist ${WRAPPED_EGLD_TOKEN_IDENTIFIER}
+    storeIncrementNonce
+
+    sleep 10
+
+    loadNonce
+    addAddressToApprovedlist 0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1 # Alice's address
+    storeIncrementNonce
+}
+
+### Test functions. Can be called in any order to test particular functionalities.
 
 queryEsdtTokenManager() {
     source ../EsdtTokenManager/interaction/snippets.sh
@@ -95,6 +120,20 @@ burnWrappedEgld() {
 
     echo "Total wrapped eGLD:"
     getTokenAmount ${WRAPPED_EGLD_TOKEN_IDENTIFIER}
+}
+
+createCrossChainTransaction() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
+    createCrossChainTx ${WRAPPED_EGLD_TOKEN_IDENTIFIER} 0x4563918244F40000 0x0A 0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1 0x 0x  # 10 wrapped eGLD (10 * 10^18)
+    storeIncrementNonce
+}
+
+queryCrossChainManager() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    echo "Tx by hash:"
 }
 
 ### Scnearios

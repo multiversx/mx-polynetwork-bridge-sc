@@ -31,6 +31,10 @@ path = "../common/header"
 version = "0.0.0"
 path = "../common/transaction"
 
+[dependencies.esdt-payment]
+version = "0.0.0"
+path = "../common/esdt-payment"
+
 [dependencies.util]
 version = "0.0.0"
 path = "../common/util"

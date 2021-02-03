@@ -36,12 +36,10 @@ pub struct EsdtOperation<BigUint: BigUintApi> {
 
 #[elrond_wasm_derive::contract(EsdtTokenManagerImpl)]
 pub trait EsdtTokenManager {
-    /*#[init]
+    #[init]
     fn init(&self, cross_chain_management_address: Address) {
         self.set_cross_chain_management_contract_address(&cross_chain_management_address);
-    }*/
-    #[init]
-    fn init(&self) {}
+    }
 
     // endpoints - owner-only
 

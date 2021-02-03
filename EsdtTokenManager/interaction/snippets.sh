@@ -5,14 +5,14 @@ PROXY=http://localhost:7950 # For public testnet, replace with https://testnet-g
 CHAIN_ID=local-testnet
 PROJECT_HARDCODED="/home/elrond/sc-polynetwork-bridge-rs/EsdtTokenManager"
 
-# CROSS_CHAIN_MANAGEMENT_ADDRESS=$(erdpy data load --key=address-testnet-crossChainManagement)
-# CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED=$(erdpy wallet bech32 --decode ${CROSS_CHAIN_MANAGEMENT_ADDRESS})
+CROSS_CHAIN_MANAGEMENT_ADDRESS=$(erdpy data load --key=address-testnet-crossChainManagement)
+CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED=$(erdpy wallet bech32 --decode ${CROSS_CHAIN_MANAGEMENT_ADDRESS})
 
 # To get tx result, go to http://localhost:7950/transaction/tx_hash_here?withResults=true
 
 deploy() {
     # --arguments 0x${CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED}
-    erdpy --verbose contract deploy --project=${PROJECT_HARDCODED} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=200000000 --send --outfile="deploy-testnet.interaction.json" --proxy=${PROXY} --chain=${CHAIN_ID} || return
+    erdpy --verbose contract deploy --project=${PROJECT_HARDCODED} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=200000000 --arguments ${CROSS_CHAIN_MANAGEMENT_ADDRESS_DECODED} --send --outfile="deploy-testnet.interaction.json" --proxy=${PROXY} --chain=${CHAIN_ID} || return
 
     TRANSACTION=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emitted_tx']['hash']")
     ADDRESS=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emitted_tx']['address']")

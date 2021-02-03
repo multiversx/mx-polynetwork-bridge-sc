@@ -1,6 +1,7 @@
 #![no_std]
 
 use elrond_wasm::{imports, only_owner, ArgBuffer, HexCallDataSerializer};
+use esdt_payment::*;
 use header::*;
 use transaction::*;
 
@@ -287,9 +288,9 @@ pub trait CrossChainManagement {
         let mut tx = Transaction {
             hash: H256::zero(),
             id: tx_id,
-            from_contract_address,
+            from_contract_address: from_contract_address.clone(),
             to_chain_id,
-            to_contract_address,
+            to_contract_address: to_contract_address.clone(),
             method_name,
             method_args,
         };
@@ -303,26 +304,25 @@ pub trait CrossChainManagement {
                 "Token is not on whitelist. Transaction rejected"
             );
 
-            self.set_payment_for_tx(&tx.hash, &(token_identifier, esdt_value));
+            self.set_payment_for_tx(
+                &tx.hash,
+                &EsdtPayment {
+                    sender: from_contract_address,
+                    receiver: to_contract_address,
+                    token_identifier,
+                    amount: esdt_value,
+                },
+            );
         }
 
         self.set_tx_by_hash(&tx.hash, &tx);
-        // TODO: Add a way to mark these as Executed/Rejected by an approved address
         self.set_tx_status(&tx.hash, TransactionStatus::Pending);
+        self.save_tx_to_pending_list(&tx.hash);
         self.set_cross_chain_tx_id(to_chain_id, tx_id + 1);
 
         self.create_tx_event(&tx);
 
         Ok(())
-    }
-
-    #[endpoint(getTxByHash)]
-    fn get_tx_by_hash_or_none(&self, poly_tx_hash: H256) -> Option<Transaction> {
-        if !self.is_empty_tx_by_hash(&poly_tx_hash) {
-            Some(self.get_tx_by_hash(&poly_tx_hash))
-        } else {
-            None
-        }
     }
 
     #[endpoint(processCrossChainTx)]
@@ -390,6 +390,33 @@ pub trait CrossChainManagement {
         self.process_tx(&poly_tx_hash)
     }
 
+    // views
+
+    #[view(getTxByHash)]
+    fn get_tx_by_hash_or_none(&self, poly_tx_hash: H256) -> Option<Transaction> {
+        if !self.is_empty_tx_by_hash(&poly_tx_hash) {
+            Some(self.get_tx_by_hash(&poly_tx_hash))
+        } else {
+            None
+        }
+    }
+
+    #[view(getNextPendingCrossChainTx)]
+    fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
+        let list_len = self.get_pending_cross_chain_tx_length();
+        let current_index = self.get_pending_cross_chain_tx_current_index();
+
+        if current_index < list_len {
+            let poly_tx_hash = self.get_pending_cross_chain_tx(current_index);
+
+            self.set_pending_cross_chain_tx_current_index(current_index + 1);
+
+            Some(self.get_tx_by_hash(&poly_tx_hash))
+        } else {
+            None
+        }
+    }
+
     // callbacks
 
     #[callback]
@@ -416,7 +443,15 @@ pub trait CrossChainManagement {
                         self.set_tx_status(&tx.hash, TransactionStatus::Pending);
 
                         if !token_identifier.is_empty() && amount > 0 {
-                            self.set_payment_for_tx(&tx.hash, &(token_identifier, amount));
+                            self.set_payment_for_tx(
+                                &tx.hash,
+                                &EsdtPayment {
+                                    sender: tx.from_contract_address,
+                                    receiver: tx.to_contract_address,
+                                    token_identifier,
+                                    amount,
+                                },
+                            );
                         }
                     }
                     None => {
@@ -439,6 +474,13 @@ pub trait CrossChainManagement {
         BoxedBytes::from(self.get_esdt_token_name())
     }
 
+    fn save_tx_to_pending_list(&self, poly_tx_hash: &H256) {
+        let new_tx_index = self.get_pending_cross_chain_tx_length();
+
+        self.set_pending_cross_chain_tx(new_tx_index, poly_tx_hash);
+        self.set_pending_cross_chain_tx_length(new_tx_index + 1);
+    }
+
     // deduplicates logic from ProcessPendingTx and RetryOutOfFundsTx
     // don't need chain id, as these transactions are meant for our chain, so we use own_chain_id
     fn process_tx(&self, poly_tx_hash: &H256) -> SCResult<()> {
@@ -456,12 +498,12 @@ pub trait CrossChainManagement {
         // this should never fail, but we'll check just in case
         require!(&tx.hash == poly_tx_hash, "Wrong transaction hash");
 
-        let (token_identifier, amount) = self.get_payment_for_tx(poly_tx_hash);
+        let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
         let token_management_contract_address = self.get_token_management_contract_address();
 
         let mut serializer = HexCallDataSerializer::new(TRANSFER_ESDT_ENDPOINT_NAME);
-        serializer.push_argument_bytes(token_identifier.as_slice());
-        serializer.push_argument_bytes(&amount.to_bytes_be());
+        serializer.push_argument_bytes(esdt_payment.token_identifier.as_slice());
+        serializer.push_argument_bytes(esdt_payment.amount.to_bytes_be().as_slice());
         serializer.push_argument_bytes(tx.to_contract_address.as_bytes());
         serializer.push_argument_bytes(tx.hash.as_bytes());
 
@@ -486,20 +528,21 @@ pub trait CrossChainManagement {
             return;
         }
 
-        let (token_identifer, amount) = self.get_payment_for_tx(poly_tx_hash);
-        let mut current_burn_amount = self.get_burn_amount_for_token(&token_identifer);
+        let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
+        let mut current_burn_amount =
+            self.get_burn_amount_for_token(&esdt_payment.token_identifier);
 
         if current_burn_amount == 0 {
             let mut burn_pool_token_identifiers_list = self.get_burn_pool_token_identifiers();
 
-            burn_pool_token_identifiers_list.push(token_identifer.clone());
+            burn_pool_token_identifiers_list.push(esdt_payment.token_identifier.clone());
 
             self.set_burn_pool_token_identifiers(&burn_pool_token_identifiers_list);
         }
 
-        current_burn_amount += amount;
+        current_burn_amount += esdt_payment.amount;
 
-        self.set_burn_amount_for_token(&token_identifer, &current_burn_amount);
+        self.set_burn_amount_for_token(&esdt_payment.token_identifier, &current_burn_amount);
 
         self.clear_payment_for_tx(poly_tx_hash);
     }
@@ -510,9 +553,11 @@ pub trait CrossChainManagement {
         }
 
         let refund_address = self.get_tx_by_hash(poly_tx_hash).from_contract_address;
-        let (token_identifer, amount) = self.get_payment_for_tx(poly_tx_hash);
-        let mut current_refund_amount =
-            self.get_refund_amount_for_token_for_address(&token_identifer, &refund_address);
+        let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
+        let mut current_refund_amount = self.get_refund_amount_for_token_for_address(
+            &esdt_payment.token_identifier,
+            &refund_address,
+        );
 
         if current_refund_amount == 0 {
             let mut refund_pool_tokens_list =
@@ -527,15 +572,15 @@ pub trait CrossChainManagement {
                 self.set_refund_pool_address_list(&refund_pool_address_list);
             }
 
-            refund_pool_tokens_list.push(token_identifer.clone());
+            refund_pool_tokens_list.push(esdt_payment.token_identifier.clone());
 
             self.set_refund_pool_tokens_list_for_address(&refund_address, &refund_pool_tokens_list);
         }
 
-        current_refund_amount += amount;
+        current_refund_amount += esdt_payment.amount;
 
         self.set_refund_amount_for_token_for_address(
-            &token_identifer,
+            &esdt_payment.token_identifier,
             &refund_address,
             &current_refund_amount,
         );
@@ -597,14 +642,10 @@ pub trait CrossChainManagement {
 
     #[view(getPaymentForTx)]
     #[storage_get("paymentForTx")]
-    fn get_payment_for_tx(&self, poly_tx_hash: &H256) -> (BoxedBytes, BigUint);
+    fn get_payment_for_tx(&self, poly_tx_hash: &H256) -> EsdtPayment<BigUint>;
 
     #[storage_set("paymentForTx")]
-    fn set_payment_for_tx(
-        &self,
-        poly_tx_hash: &H256,
-        token_identifier_amount_pair: &(BoxedBytes, BigUint),
-    );
+    fn set_payment_for_tx(&self, poly_tx_hash: &H256, esdt_payment: &EsdtPayment<BigUint>);
 
     #[storage_clear("paymentForTx")]
     fn clear_payment_for_tx(&self, poly_tx_hash: &H256);
@@ -620,7 +661,7 @@ pub trait CrossChainManagement {
     fn get_burn_pool_token_identifiers(&self) -> Vec<BoxedBytes>;
 
     #[storage_set("burnPoolTokenIdentifiers")]
-    fn set_burn_pool_token_identifiers(&self, burn_pool: &Vec<BoxedBytes>);
+    fn set_burn_pool_token_identifiers(&self, burn_pool: &[BoxedBytes]);
 
     #[view(getBurnAmountForToken)]
     #[storage_get("burnAmountForToken")]
@@ -640,7 +681,7 @@ pub trait CrossChainManagement {
     fn get_refund_pool_address_list(&self) -> Vec<Address>;
 
     #[storage_set("refundPoolAddressList")]
-    fn set_refund_pool_address_list(&self, address_list: &Vec<Address>);
+    fn set_refund_pool_address_list(&self, address_list: &[Address]);
 
     #[view(getRefundPoolTokensListForAddress)]
     #[storage_get("refundPoolTokensListForAddress")]
@@ -650,7 +691,7 @@ pub trait CrossChainManagement {
     fn set_refund_pool_tokens_list_for_address(
         &self,
         refund_address: &Address,
-        token_identifier_list: &Vec<BoxedBytes>,
+        token_identifier_list: &[BoxedBytes],
     );
 
     #[view(getRefundAmountForTokenForAddress)]
@@ -680,6 +721,7 @@ pub trait CrossChainManagement {
 
     // cross chain tx id
 
+    #[view(getCrossChainTxId)]
     #[storage_get("crossChainTxId")]
     fn get_cross_chain_tx_id(&self, chain_id: u64) -> u64;
 
@@ -697,6 +739,26 @@ pub trait CrossChainManagement {
     #[storage_is_empty("txByHash")]
     fn is_empty_tx_by_hash(&self, poly_tx_hash: &H256) -> bool;
 
+    // list of hashes for pending tx from elrond to another chain
+
+    #[storage_get("pendingCrosschainTxList")]
+    fn get_pending_cross_chain_tx(&self, index: usize) -> H256;
+
+    #[storage_set("pendingCrosschainTxList")]
+    fn set_pending_cross_chain_tx(&self, index: usize, poly_tx_hash: &H256);
+
+    #[storage_get("pendingCrossChainTxListLength")]
+    fn get_pending_cross_chain_tx_length(&self) -> usize;
+
+    #[storage_set("pendingCrosschainTxListLength")]
+    fn set_pending_cross_chain_tx_length(&self, length: usize);
+
+    #[storage_get("pendingCrosschainTxCurrentIndex")]
+    fn get_pending_cross_chain_tx_current_index(&self) -> usize;
+
+    #[storage_set("pendingCrosschainTxCurrentIndex")]
+    fn set_pending_cross_chain_tx_current_index(&self, current_index: usize);
+
     // transaction status
 
     #[view(getTxStatus)]
@@ -708,17 +770,19 @@ pub trait CrossChainManagement {
 
     // Token whitelist
 
+    #[view(getTokenWhitelist)]
     #[storage_get("tokenWhitelist")]
     fn get_token_whitelist(&self) -> Vec<BoxedBytes>;
 
     #[storage_set("tokenWhitelist")]
-    fn set_token_whitelist(&self, token_whitelist: &Vec<BoxedBytes>);
+    fn set_token_whitelist(&self, token_whitelist: &[BoxedBytes]);
 
     // Approved address list - These addresses can mark transactions as executed/rejected and trigger a burn/refund respectively
 
+    #[view(getApprovedAddressList)]
     #[storage_get("approvedAddressList")]
     fn get_approved_address_list(&self) -> Vec<Address>;
 
     #[storage_set("approvedAddressList")]
-    fn set_approved_address_list(&self, approved_address_list: &Vec<Address>);
+    fn set_approved_address_list(&self, approved_address_list: &[Address]);
 }
