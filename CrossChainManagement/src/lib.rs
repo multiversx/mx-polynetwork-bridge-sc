@@ -401,7 +401,7 @@ pub trait CrossChainManagement {
         }
     }
 
-    #[view(getNextPendingCrossChainTx)]
+    #[endpoint(getNextPendingCrossChainTx)]
     fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
         let list_len = self.get_pending_cross_chain_tx_length();
         let current_index = self.get_pending_cross_chain_tx_current_index();
