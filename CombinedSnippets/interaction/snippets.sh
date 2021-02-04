@@ -1,9 +1,9 @@
 ### Common
 
 # update after token manager deploy, "0x" followed by the "hex" part
-WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d323464356663
+WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d653737386363
 
-# No need to update this, as its always the same poly tx, which in turn means the same hash
+# No need to update this, as it's always the same poly tx, which in turn means the same hash
 POLY_TX_HASH=0xd95c06a936c765969c42846432d41268fd73c7a169e10ad1543050a4431edb04
 
 loadNonce() {
@@ -141,6 +141,12 @@ getTransactionByHash() {
     source ../CrossChainManagement/interaction/snippets.sh
 
     getTxByHash ${POLY_TX_HASH}
+}
+
+getPaymentForTransaction() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    getPaymentForTx ${POLY_TX_HASH}
 }
 
 ### Scnearios

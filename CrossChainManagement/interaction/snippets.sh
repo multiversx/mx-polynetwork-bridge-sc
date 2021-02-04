@@ -56,3 +56,8 @@ getNextPendingTx() {
 getTxByHash() {
     erdpy --verbose contract query ${ADDRESS} --function="getTxByHash" --arguments $1 --proxy=${PROXY}
 }
+
+# Arguments: poly tx hash
+getPaymentForTx() {
+    erdpy --verbose contract query ${ADDRESS} --function="getPaymentForTx" --arguments $1 --proxy=${PROXY}
+}

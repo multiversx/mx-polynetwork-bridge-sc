@@ -97,4 +97,6 @@ Looking at the `data` field, "6f6b" means "ok", so the endpoint call worked. Nex
 
 ![deserialize-tx](img/deserialize-tx.png)
 
+To check the payment is saved, call `getPaymentForTransaction`. As before, you can go to `common/tests/deserialize.rs` and run the `deserialize_esdt_payment` test to see the payment data.
+
 And that concludes the first scenario.

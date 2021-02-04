@@ -1,9 +1,13 @@
 extern crate transaction;
 use transaction::*;
 
+extern crate esdt_payment;
+use esdt_payment::*;
+
 extern crate hex;
 
-use elrond_wasm::elrond_codec::*;
+use elrond_wasm::{BigUintApi, elrond_codec::*};
+use elrond_wasm_debug::RustBigUint;
 
 // Run with: cargo test -- --nocapture deserialize_transaction
 #[test]
@@ -26,4 +30,21 @@ fn deserialize_transaction() {
     for i in 0..transaction.method_args.len() {
         println!("Arg{}: {}", i, hex::encode(transaction.method_args[i].as_slice()));
     }
+}
+
+// Run with: cargo test -- --nocapture deserialize_esdt_payment
+#[test]
+fn deserialize_esdt_payment() {
+    let input = "0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10c5745474c442d653737386363084563918244f40000";
+    let serialized = hex::decode(input).expect("hex decoding failed");
+    let esdt_payment = match EsdtPayment::<RustBigUint>::dep_decode(&mut serialized.as_slice()) {
+        Ok(payment) => payment,
+        Err(_) => panic!("esdt payment decoding error")
+    };
+
+    println!("Esdt Payment:");
+    println!("sender: {}", hex::encode(esdt_payment.sender));
+    println!("receiver: {}", hex::encode(esdt_payment.receiver));
+    println!("token_identifier: {}", hex::encode(esdt_payment.token_identifier.as_slice()));
+    println!("amount: {}", hex::encode(esdt_payment.amount.to_bytes_be().as_slice()));
 }
