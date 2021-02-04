@@ -1,10 +1,10 @@
 ### Common
 
 # update after token manager deploy, "0x" followed by the "hex" part
-WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d653162653036
+WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d323464356663
 
-# update after getting next pending tx
-POLY_TX_HASH=0x00
+# No need to update this, as its always the same poly tx, which in turn means the same hash
+POLY_TX_HASH=0xd95c06a936c765969c42846432d41268fd73c7a169e10ad1543050a4431edb04
 
 loadNonce() {
     alice_nonce=$(erdpy data load --key=alice_nonce)
@@ -140,9 +140,7 @@ getNextPendingCrossChainTransation() {
 getTransactionByHash() {
     source ../CrossChainManagement/interaction/snippets.sh
 
-    loadNonce
     getTxByHash ${POLY_TX_HASH}
-    storeIncrementNonce
 }
 
 ### Scnearios

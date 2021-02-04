@@ -28,7 +28,7 @@ If you did indeed get something like this, copy the "hex" number, and update the
 
 `WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d653162653036`
 
-Once this is done, it's time to finalize the setup. You can do that by calling:
+Once this is done, it's time to finalize the setup. You can do that by calling: (this sets the EsdtTokenManager address, adds Wrapped eGLD to the token whitelist and adds Alice to the approved addresses list)
 
 `4) finalizeSetup`
 
@@ -87,3 +87,14 @@ Now the contract has 55 wrapped eGLD and only 5 locked eGLD. And Alice has only 
 
 ![alice](img/alice.png)
 
+Now for the final step, Alice sends her remaining 5 wrapped eGLD to an offchain account. For the sake of the example, we're going to send it to the chain with id "10" and we're sending it to the very same address (In practice, addresses are never going to be the same, but for the sake of simplicity, we'll use the same address).
+
+To see the transaction, call `getNextPendingCrossChainTransation` (or alternatively `getTransactionByHash`, the hash is hardcoded in the test). If you call the former, you should see the following:
+
+![next-pending-tx](img/next-pending-tx.png)
+
+Looking at the `data` field, "6f6b" means "ok", so the endpoint call worked. Next is the actual transaction. Keep in mind the endpoint returns an `Option<Transaction>`, so that means the leading "01" should be ignored, as it corresponds to the `Option::Some(T)` enum value. To see the transaction's fields, you can go into the `common/tests/deserialize.rs` file and run the `deserialize_transaction` test (the serialized transaction is already in the "input" variable) and you should get this:
+
+![deserialize-tx](img/deserialize-tx.png)
+
+And that concludes the first scenario.

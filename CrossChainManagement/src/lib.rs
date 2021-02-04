@@ -392,9 +392,7 @@ pub trait CrossChainManagement {
 
     #[endpoint(getNextPendingCrossChainTx)]
     fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
-        // TODO: Test
-
-        /*let list_len = self.get_pending_cross_chain_tx_length();
+        let list_len = self.get_pending_cross_chain_tx_length();
         let current_index = self.get_pending_cross_chain_tx_current_index();
 
         if current_index < list_len {
@@ -405,9 +403,7 @@ pub trait CrossChainManagement {
             Some(self.get_tx_by_hash(&poly_tx_hash))
         } else {
             None
-        }*/
-
-        Some(self.get_tx_by_hash(&self.get_pending_cross_chain_tx(0)))
+        }
     }
 
     // views
@@ -751,7 +747,7 @@ pub trait CrossChainManagement {
     #[storage_set("pendingCrosschainTxList")]
     fn set_pending_cross_chain_tx(&self, index: usize, poly_tx_hash: &H256);
 
-    #[storage_get("pendingCrossChainTxListLength")]
+    #[storage_get("pendingCrosschainTxListLength")]
     fn get_pending_cross_chain_tx_length(&self) -> usize;
 
     #[storage_set("pendingCrosschainTxListLength")]
