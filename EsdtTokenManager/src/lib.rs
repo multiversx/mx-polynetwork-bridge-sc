@@ -89,6 +89,8 @@ pub trait EsdtTokenManager {
             "Wrong payment, should pay exactly 5 eGLD for ESDT token issue"
         );
 
+        require!(initial_supply > 0, "initial supply must be more than 0");
+
         self.issue_esdt_token(
             &token_display_name,
             &token_ticker,
@@ -105,8 +107,10 @@ pub trait EsdtTokenManager {
         token_identifier: BoxedBytes,
         amount: BigUint,
     ) -> SCResult<()> {
+        only_owner!(self, "only owner may call this function");
+
         require!(
-            self.get_was_token_issued(&token_identifier),
+            self.get_total_wrapped_remaining(&token_identifier) > 0,
             "Token must be issued first"
         );
         require!(amount > 0, "Amount minted must be more than 0");
@@ -124,8 +128,9 @@ pub trait EsdtTokenManager {
     ) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
+        require!(amount > 0, "Amount burned must be more than 0");
         require!(
-            amount <= self.get_total_wrapped_remaining(&token_identifier),
+            amount < self.get_total_wrapped_remaining(&token_identifier),
             "Can't burn more than total wrapped remaining"
         );
 
@@ -152,7 +157,7 @@ pub trait EsdtTokenManager {
         );
 
         let total_wrapped = self.get_total_wrapped_remaining(&token_identifier);
-        if total_wrapped < amount {
+        if total_wrapped <= amount {
             self.complete_tx(&poly_tx_hash, TransactionStatus::OutOfFunds);
         } else {
             // save the poly_tx_hash to be used in the callback
@@ -185,7 +190,7 @@ pub trait EsdtTokenManager {
         let wrapped_egld_left = self.get_total_wrapped_remaining(&wrapped_egld_token_identifier);
 
         require!(
-            wrapped_egld_left >= payment,
+            wrapped_egld_left > payment,
             "Contract does not have enough wrapped eGLD. Please try again once more is minted."
         );
 
@@ -460,7 +465,7 @@ pub trait EsdtTokenManager {
 
         if success {
             self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
-            self.set_was_token_issued(&token_identifier, true);
+            self.set_last_issued_token_identifier(&token_identifier);
 
             // if this is empty, then this is the very first issue, which would be the wrapped eGLD token
             if self.is_empty_wrapped_egld_token_identifier() {
@@ -511,6 +516,7 @@ pub trait EsdtTokenManager {
     fn is_empty_wrapped_egld_token_identifier(&self) -> bool;
 
     // The total remaining wrapped tokens of each type owned by this SC. Stored so we don't have to query everytime.
+    // An issued token will always have a balance of at least "1"
 
     #[view(getTotalWrappedRemaining)]
     #[storage_get("totalWrappedRemaining")]
@@ -519,15 +525,14 @@ pub trait EsdtTokenManager {
     #[storage_set("totalWrappedRemaining")]
     fn set_total_wrapped_remaining(&self, token_identifier: &BoxedBytes, total_wrapped: &BigUint);
 
-    // This is used to be able to tell the difference between a totalWrappedRemaining of 0 and a non-issued token
-    // storage_is_empty would return 'true' in both cases
+    // Used to be able to issue, get the identifier, and then add it to whitelist in the other contracts
 
-    #[view(wasTokenIssued)]
-    #[storage_get("wasTokenIssued")]
-    fn get_was_token_issued(&self, token_identifier: &BoxedBytes) -> bool;
+    #[view(getLastIssuedTokenIdentifier)]
+    #[storage_get("lastIssuedTokenIdentifier")]
+    fn get_last_issued_token_identifier(&self) -> BoxedBytes;
 
-    #[storage_set("wasTokenIssued")]
-    fn set_was_token_issued(&self, token_identifier: &BoxedBytes, was_token_issued: bool);
+    #[storage_set("lastIssuedTokenIdentifier")]
+    fn set_last_issued_token_identifier(&self, token_identifier: &BoxedBytes);
 
     // cross chain management
 
