@@ -6,7 +6,7 @@ use esdt_payment::*;
 
 extern crate hex;
 
-use elrond_wasm::{BigUintApi, elrond_codec::*};
+use elrond_wasm::{elrond_codec::*, BigUintApi};
 use elrond_wasm_debug::RustBigUint;
 
 // Run with: cargo test -- --nocapture deserialize_transaction
@@ -16,19 +16,32 @@ fn deserialize_transaction() {
     let serialized = hex::decode(input).expect("hex decoding failed");
     let transaction = match Transaction::dep_decode(&mut serialized.as_slice()) {
         Ok(tx) => tx,
-        Err(_) => panic!("transaction decoding error")
+        Err(_) => panic!("transaction decoding error"),
     };
 
     println!("Transaction:");
     println!("hash: {}", hex::encode(transaction.hash));
     println!("id: {}", transaction.id);
-    println!("from_contract_address: {}", hex::encode(transaction.from_contract_address));
+    println!(
+        "from_contract_address: {}",
+        hex::encode(transaction.from_contract_address)
+    );
     println!("to_chain_id: {}", transaction.to_chain_id);
-    println!("to_contract_address: {}", hex::encode(transaction.to_contract_address));
-    println!("method_name: {}", hex::encode(transaction.method_name.as_slice()));
+    println!(
+        "to_contract_address: {}",
+        hex::encode(transaction.to_contract_address)
+    );
+    println!(
+        "method_name: {}",
+        hex::encode(transaction.method_name.as_slice())
+    );
     println!("method_args:");
     for i in 0..transaction.method_args.len() {
-        println!("Arg{}: {}", i, hex::encode(transaction.method_args[i].as_slice()));
+        println!(
+            "Arg{}: {}",
+            i,
+            hex::encode(transaction.method_args[i].as_slice())
+        );
     }
 }
 
@@ -39,12 +52,18 @@ fn deserialize_esdt_payment() {
     let serialized = hex::decode(input).expect("hex decoding failed");
     let esdt_payment = match EsdtPayment::<RustBigUint>::dep_decode(&mut serialized.as_slice()) {
         Ok(payment) => payment,
-        Err(_) => panic!("esdt payment decoding error")
+        Err(_) => panic!("esdt payment decoding error"),
     };
 
     println!("Esdt Payment:");
     println!("sender: {}", hex::encode(esdt_payment.sender));
     println!("receiver: {}", hex::encode(esdt_payment.receiver));
-    println!("token_identifier: {}", hex::encode(esdt_payment.token_identifier.as_slice()));
-    println!("amount: {}", hex::encode(esdt_payment.amount.to_bytes_be().as_slice()));
+    println!(
+        "token_identifier: {}",
+        hex::encode(esdt_payment.token_identifier.as_slice())
+    );
+    println!(
+        "amount: {}",
+        hex::encode(esdt_payment.amount.to_bytes_be().as_slice())
+    );
 }
