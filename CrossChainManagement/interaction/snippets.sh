@@ -61,3 +61,18 @@ getTxByHash() {
 getPaymentForTx() {
     erdpy --verbose contract query ${ADDRESS} --function="getPaymentForTx" --arguments $1 --proxy=${PROXY}
 }
+
+# Arguments: poly tx hash
+getTxStatus() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTxStatus" --arguments $1 --proxy=${PROXY}
+}
+
+# Arguments: from_chain_id, height, transaction, token_identifier, amount
+processCrossChainTx() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=500000000 --function="processCrossChainTx" --arguments $1 $2 $3 $4 $5 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}
+
+# Arguments: poly_tx_hash
+processPendingTx() {
+    erdpy --verbose contract call ${ADDRESS} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=500000000 --function="processPendingTx" --arguments $1 --send --proxy=${PROXY} --chain=${CHAIN_ID}
+}

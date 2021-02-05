@@ -1,10 +1,19 @@
 ### Common
 
 # update after token manager deploy, "0x" followed by the "hex" part
-WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d653737386363
+WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d363039383231
+
+# update after issue
+WRAPPED_ETH_TOKEN_IDENTIFIER=0x574554482d393735656366
 
 # No need to update this, as it's always the same poly tx, which in turn means the same hash
-POLY_TX_HASH=0xd95c06a936c765969c42846432d41268fd73c7a169e10ad1543050a4431edb04
+# Hash for TX from Elrond to another chain
+FROM_ERD_TX_HASH=0xd95c06a936c765969c42846432d41268fd73c7a169e10ad1543050a4431edb04
+
+# No need to update, always the same
+# Tx from Ethereum (just an example, could be any chain) to Elrond
+FROM_ETH_TRANSACTION=0x25a4fa887af0bb300e21a4bf8c6a7101a17c2039af36ae9b33b32ee962e64039000000000000000000000000000000000000000000000000000000000000000000000000000000002a000000000000000139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10000
+FROM_ETH_TX_HASH=0x25a4fa887af0bb300e21a4bf8c6a7101a17c2039af36ae9b33b32ee962e64039
 
 loadNonce() {
     alice_nonce=$(erdpy data load --key=alice_nonce)
@@ -140,13 +149,13 @@ getNextPendingCrossChainTransation() {
 getTransactionByHash() {
     source ../CrossChainManagement/interaction/snippets.sh
 
-    getTxByHash ${POLY_TX_HASH}
+    getTxByHash ${FROM_ERD_TX_HASH}
 }
 
 getPaymentForTransaction() {
     source ../CrossChainManagement/interaction/snippets.sh
 
-    getPaymentForTx ${POLY_TX_HASH}
+    getPaymentForTx ${FROM_ERD_TX_HASH}
 }
 
 ### Scnearios
@@ -191,6 +200,63 @@ sendFiveEgldToAnotherChain() {
 
 # Scenario 2
 
+# Issue wrapped ETH and add to token whitelist
 # Alice receives 6 wrapped ETH
-# Alice sends 3 wrapped ETH to Bob (3 ETH left)
-# Alice sends 2 wrapped ETH to an offchain account (1 ETH left)
+# Alice sends 2 wrapped ETH to an offchain account (4 ETH left)
+
+issueWrappedEth() {
+    source ../EsdtTokenManager/interaction/snippets.sh
+
+    loadNonce
+    issueToken 0x57726170706564455448 0x57455448 0x0A 0x00
+    storeIncrementNonce
+
+    sleep 40
+
+    echo "Wrapped ETH token identifier:"
+    getLastIssuedTokenIdentifier
+}
+
+addWrappedEthToWhitelist() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
+    addTokenToWhitelist ${WRAPPED_ETH_TOKEN_IDENTIFIER}
+    storeIncrementNonce
+}
+
+getTotalWrappedEth() {
+    source ../EsdtTokenManager/interaction/snippets.sh
+
+    echo "Total wrapped ETH:"
+    getTokenAmount ${WRAPPED_ETH_TOKEN_IDENTIFIER}
+}
+
+receiveSixWrappedEth() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
+    processCrossChainTx 0x00 0x00 ${FROM_ETH_TRANSACTION} ${WRAPPED_ETH_TOKEN_IDENTIFIER} 0x06
+    storeIncrementNonce
+}
+
+getPayment() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    echo "Payment for tx:"
+    getPaymentForTx 0x25a4fa887af0bb300e21a4bf8c6a7101a17c2039af36ae9b33b32ee962e64039
+}
+
+processReceivedEthTx() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    loadNonce
+    processPendingTx ${FROM_ETH_TX_HASH}
+    storeIncrementNonce
+}
+
+getTransactionStatus() {
+    source ../CrossChainManagement/interaction/snippets.sh
+
+    getTxStatus ${FROM_ETH_TX_HASH}
+}

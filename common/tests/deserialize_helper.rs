@@ -45,10 +45,7 @@ fn deserialize_transaction() {
     }
 }
 
-// Run with: cargo test -- --nocapture deserialize_esdt_payment
-#[test]
-fn deserialize_esdt_payment() {
-    let input = "0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10c5745474c442d653737386363084563918244f40000";
+fn deserialize_esdt_payment(input: &str) {
     let serialized = hex::decode(input).expect("hex decoding failed");
     let esdt_payment = match EsdtPayment::<RustBigUint>::dep_decode(&mut serialized.as_slice()) {
         Ok(payment) => payment,
@@ -66,4 +63,16 @@ fn deserialize_esdt_payment() {
         "amount: {}",
         hex::encode(esdt_payment.amount.to_bytes_be().as_slice())
     );
+}
+
+// Run with: cargo test -- --nocapture deserialize_esdt_payment_first_scenario
+#[test]
+fn deserialize_esdt_payment_first_scenario() {
+    deserialize_esdt_payment("0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10c5745474c442d653737386363084563918244f40000");
+}
+
+// Run with: cargo test -- --nocapture deserialize_esdt_payment_second_scenario
+#[test]
+fn deserialize_esdt_payment_second_scenario() {
+    deserialize_esdt_payment("00000000000000000000000000000000000000000000000000000000000000000139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10b574554482d3937356563660106");
 }

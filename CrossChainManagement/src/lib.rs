@@ -442,6 +442,8 @@ pub trait CrossChainManagement {
                         self.set_tx_by_hash(&tx.hash, &tx);
                         self.set_tx_status(&tx.hash, TransactionStatus::Pending);
 
+                        // TODO: Add transactions to a list
+
                         if !token_identifier.is_empty() && amount > 0 {
                             self.set_payment_for_tx(
                                 &tx.hash,

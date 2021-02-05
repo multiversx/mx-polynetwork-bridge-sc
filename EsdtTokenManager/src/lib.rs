@@ -168,6 +168,8 @@ pub trait EsdtTokenManager {
             } else {
                 // automatically unwrap before sending if the token is wrapped eGLD
                 self.transfer_egld(&to, &amount, &func_name, args.as_slice());
+
+                // TODO: Update contract wrapped eGLD balance in storage
             }
         }
 
