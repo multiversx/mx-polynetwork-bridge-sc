@@ -6,7 +6,7 @@ CHAIN_ID=local-testnet
 PROJECT_HARDCODED="/home/elrond/sc-polynetwork-bridge-rs/CrossChainManagement"
 
 # Doesn't really matter what you input here, as long as it fits in a u64. We'll just use the magic meaning of life number: 42
-OWN_CHAIN_ID=0x000000000000002A
+OWN_CHAIN_ID=0x2A
 
 # To get tx result, go to http://localhost:7950/transaction/tx_hash_here?withResults=true
 
