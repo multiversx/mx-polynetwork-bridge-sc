@@ -1,7 +1,7 @@
 #![no_std]
 
 use elrond_wasm::elrond_codec::*;
-use elrond_wasm::{derive_imports, Address, BigUintApi, BoxedBytes};
+use elrond_wasm::{derive_imports, Address, api::BigUintApi, TokenIdentifier};
 
 use zero_copy_sink::*;
 use zero_copy_source::*;
@@ -12,7 +12,7 @@ derive_imports!();
 pub struct EsdtPayment<BigUint: BigUintApi> {
     pub sender: Address,
     pub receiver: Address,
-    pub token_identifier: BoxedBytes,
+    pub token_identifier: TokenIdentifier,
     pub amount: BigUint,
 }
 
@@ -63,7 +63,7 @@ impl<BigUint: BigUintApi> NestedDecode for EsdtPayment<BigUint> {
         return Ok(EsdtPayment {
             sender,
             receiver,
-            token_identifier,
+            token_identifier: TokenIdentifier::from(token_identifier),
             amount,
         });
     }

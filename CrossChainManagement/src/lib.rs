@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{imports, only_owner, ArgBuffer, HexCallDataSerializer};
+use elrond_wasm::{imports, only_owner, HexCallDataSerializer};
 use esdt_payment::*;
 use header::*;
 use transaction::*;
@@ -24,7 +24,7 @@ pub trait BlockHeaderSync {
 	#[callback(get_header_by_height_callback)]
     fn getHeaderByHeight(&self, chain_id: u64, height: u32,
         #[callback_arg] tx: &Transaction,
-        #[callback_arg] token_identifier: &BoxedBytes,
+        #[callback_arg] token_identifier: &TokenIdentifier,
         #[callback_arg] amount: &BigUint
     );
 }
@@ -49,7 +49,7 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(addTokenToWhitelist)]
-    fn add_token_to_whitelist(&self, token_identifier: BoxedBytes) -> SCResult<()> {
+    fn add_token_to_whitelist(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut token_whitelist = self.get_token_whitelist();
@@ -64,7 +64,7 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(removeTokenFromWhitelist)]
-    fn remove_token_from_whitelist(&self, token_identifier: BoxedBytes) -> SCResult<()> {
+    fn remove_token_from_whitelist(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut token_whitelist = self.get_token_whitelist();
@@ -117,7 +117,7 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(burnTokens)]
-    fn burn_tokens(&self, token_identifier: BoxedBytes) -> SCResult<()> {
+    fn burn_tokens(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut burn_pool_token_identifier_list = self.get_burn_pool_token_identifiers();
@@ -141,7 +141,7 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(refundTokens)]
-    fn refund_tokens(&self, token_identifier: BoxedBytes, refund_address: Address) -> SCResult<()> {
+    fn refund_tokens(&self, token_identifier: TokenIdentifier, refund_address: Address) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut refund_pool_address_list = self.get_refund_pool_address_list();
@@ -262,6 +262,7 @@ pub trait CrossChainManagement {
 
     // endpoints
 
+    #[payable("*")]
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
@@ -269,6 +270,8 @@ pub trait CrossChainManagement {
         to_contract_address: Address,
         method_name: BoxedBytes,
         method_args: Vec<BoxedBytes>,
+        #[payment_token] token_identifier: TokenIdentifier,
+        #[payment] esdt_value: BigUint
     ) -> SCResult<()> {
         require!(
             !self.is_empty_token_management_contract_address(),
@@ -279,12 +282,8 @@ pub trait CrossChainManagement {
             "Must send to a chain other than Elrond"
         );
 
-        let token_identifier = self.get_esdt_token_identifier_boxed();
-        let esdt_value = self.get_esdt_value_big_uint();
         let tx_id = self.get_cross_chain_tx_id(to_chain_id);
-
         let from_contract_address = self.get_caller();
-
         let mut tx = Transaction {
             hash: H256::zero(),
             id: tx_id,
@@ -296,7 +295,7 @@ pub trait CrossChainManagement {
         };
         tx.hash = self.hash_transaction(&tx);
 
-        if !token_identifier.is_empty() && esdt_value > 0 {
+        if token_identifier.is_esdt() && esdt_value > 0 {
             let token_whitelist = self.get_token_whitelist();
 
             require!(
@@ -331,7 +330,7 @@ pub trait CrossChainManagement {
         from_chain_id: u64,
         height: u32,
         tx: Transaction,
-        token_identifier: BoxedBytes,
+        token_identifier: TokenIdentifier,
         amount: BigUint,
     ) -> SCResult<()> {
         require!(
@@ -354,7 +353,7 @@ pub trait CrossChainManagement {
             "This transaction was already processed"
         );
 
-        if !token_identifier.is_empty() && amount > 0 {
+        if token_identifier.is_esdt() && amount > 0 {
             let token_whitelist = self.get_token_whitelist();
 
             require!(
@@ -424,7 +423,7 @@ pub trait CrossChainManagement {
         &self,
         result: AsyncCallResult<Option<Header>>,
         #[callback_arg] tx: Transaction,
-        #[callback_arg] token_identifier: BoxedBytes,
+        #[callback_arg] token_identifier: TokenIdentifier,
         #[callback_arg] amount: BigUint,
     ) {
         match result {
@@ -444,7 +443,7 @@ pub trait CrossChainManagement {
 
                         // TODO: Add transactions to a list
 
-                        if !token_identifier.is_empty() && amount > 0 {
+                        if token_identifier.is_esdt() && amount > 0 {
                             self.set_payment_for_tx(
                                 &tx.hash,
                                 &EsdtPayment {
@@ -470,10 +469,6 @@ pub trait CrossChainManagement {
 
     fn hash_transaction(&self, tx: &Transaction) -> H256 {
         self.sha256(tx.get_partial_serialized().as_slice())
-    }
-
-    fn get_esdt_token_identifier_boxed(&self) -> BoxedBytes {
-        BoxedBytes::from(self.get_esdt_token_name())
     }
 
     fn save_tx_to_pending_list(&self, poly_tx_hash: &H256) {
@@ -516,7 +511,8 @@ pub trait CrossChainManagement {
 
         self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
 
-        self.send_tx(
+        // TODO: Replace with async_call without callback
+        self.send().direct_egld(
             &token_management_contract_address,
             &BigUint::zero(),
             serializer.as_slice(),
@@ -590,12 +586,12 @@ pub trait CrossChainManagement {
         self.clear_payment_for_tx(poly_tx_hash);
     }
 
-    fn burn_esdt_token(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+    fn burn_esdt_token(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
         let mut serializer = HexCallDataSerializer::new(ESDT_BURN_STRING);
         serializer.push_argument_bytes(token_identifier.as_slice());
         serializer.push_argument_bytes(&amount.to_bytes_be());
 
-        self.async_call(
+        self.send().async_call_raw(
             &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
             &BigUint::zero(),
             serializer.as_slice(),
@@ -604,7 +600,7 @@ pub trait CrossChainManagement {
 
     fn refund_esdt_token(
         &self,
-        token_identifier: &BoxedBytes,
+        token_identifier: &TokenIdentifier,
         refund_address: &Address,
         amount: &BigUint,
     ) {
@@ -612,7 +608,8 @@ pub trait CrossChainManagement {
         serializer.push_argument_bytes(token_identifier.as_slice());
         serializer.push_argument_bytes(&amount.to_bytes_be());
 
-        self.send_tx(refund_address, &BigUint::zero(), serializer.as_slice());
+        // TODO: Replace with send_esdt
+        self.send().direct_egld(refund_address, &BigUint::zero(), serializer.as_slice());
     }
 
     // events
@@ -620,7 +617,7 @@ pub trait CrossChainManagement {
     #[event("0x1000000000000000000000000000000000000000000000000000000000000001")]
     fn create_tx_event(&self, tx: &Transaction);
 
-    // storage
+    // storage TODO: Use storage mappers
 
     // header sync contract address
 
@@ -660,17 +657,17 @@ pub trait CrossChainManagement {
 
     #[view(getBurnPoolTokenIdentifiers)]
     #[storage_get("burnPoolTokenIdentifiers")]
-    fn get_burn_pool_token_identifiers(&self) -> Vec<BoxedBytes>;
+    fn get_burn_pool_token_identifiers(&self) -> Vec<TokenIdentifier>;
 
     #[storage_set("burnPoolTokenIdentifiers")]
-    fn set_burn_pool_token_identifiers(&self, burn_pool: &[BoxedBytes]);
+    fn set_burn_pool_token_identifiers(&self, burn_pool: &[TokenIdentifier]);
 
     #[view(getBurnAmountForToken)]
     #[storage_get("burnAmountForToken")]
-    fn get_burn_amount_for_token(&self, token_identifier: &BoxedBytes) -> BigUint;
+    fn get_burn_amount_for_token(&self, token_identifier: &TokenIdentifier) -> BigUint;
 
     #[storage_set("burnAmountForToken")]
-    fn set_burn_amount_for_token(&self, token_identifier: &BoxedBytes, amount: &BigUint);
+    fn set_burn_amount_for_token(&self, token_identifier: &TokenIdentifier, amount: &BigUint);
 
     // refund pool - split into 3 mappings
     // first, a list of all the addresses that are due for a refund
@@ -687,27 +684,27 @@ pub trait CrossChainManagement {
 
     #[view(getRefundPoolTokensListForAddress)]
     #[storage_get("refundPoolTokensListForAddress")]
-    fn get_refund_pool_tokens_list_for_address(&self, refund_address: &Address) -> Vec<BoxedBytes>;
+    fn get_refund_pool_tokens_list_for_address(&self, refund_address: &Address) -> Vec<TokenIdentifier>;
 
     #[storage_set("refundPoolTokensListForAddress")]
     fn set_refund_pool_tokens_list_for_address(
         &self,
         refund_address: &Address,
-        token_identifier_list: &[BoxedBytes],
+        token_identifier_list: &[TokenIdentifier],
     );
 
     #[view(getRefundAmountForTokenForAddress)]
     #[storage_get("refundAmountForTokenForAddress")]
     fn get_refund_amount_for_token_for_address(
         &self,
-        token_identifier: &BoxedBytes,
+        token_identifier: &TokenIdentifier,
         address: &Address,
     ) -> BigUint;
 
     #[storage_set("refundAmountForTokenForAddress")]
     fn set_refund_amount_for_token_for_address(
         &self,
-        token_identifier: &BoxedBytes,
+        token_identifier: &TokenIdentifier,
         address: &Address,
         amount: &BigUint,
     );
@@ -774,10 +771,10 @@ pub trait CrossChainManagement {
 
     #[view(getTokenWhitelist)]
     #[storage_get("tokenWhitelist")]
-    fn get_token_whitelist(&self) -> Vec<BoxedBytes>;
+    fn get_token_whitelist(&self) -> Vec<TokenIdentifier>;
 
     #[storage_set("tokenWhitelist")]
-    fn set_token_whitelist(&self, token_whitelist: &[BoxedBytes]);
+    fn set_token_whitelist(&self, token_whitelist: &[TokenIdentifier]);
 
     // Approved address list - These addresses can mark transactions as executed/rejected and trigger a burn/refund respectively
 

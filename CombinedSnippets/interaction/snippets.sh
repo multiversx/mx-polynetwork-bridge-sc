@@ -1,10 +1,10 @@
 ### Common
 
 # update after token manager deploy, "0x" followed by the "hex" part
-WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d363039383231
+WRAPPED_EGLD_TOKEN_IDENTIFIER=0x5745474c442d643736326565
 
 # update after issue
-WRAPPED_ETH_TOKEN_IDENTIFIER=0x574554482d393735656366
+WRAPPED_ETH_TOKEN_IDENTIFIER=0x574554482d333365313865
 
 # No need to update this, as it's always the same poly tx, which in turn means the same hash
 # Hash for TX from Elrond to another chain

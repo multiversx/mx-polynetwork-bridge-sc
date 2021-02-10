@@ -30,7 +30,7 @@ const COMPLETE_TX_ENDPOINT_NAME: &[u8] = b"completeTx";
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode)]
 pub struct EsdtOperation<BigUint: BigUintApi> {
     name: BoxedBytes,
-    token_identifier: BoxedBytes,
+    token_identifier: TokenIdentifier,
     amount: BigUint,
 }
 
@@ -104,7 +104,7 @@ pub trait EsdtTokenManager {
     #[endpoint(mintEsdtToken)]
     fn mint_esdt_token_endpoint(
         &self,
-        token_identifier: BoxedBytes,
+        token_identifier: TokenIdentifier,
         amount: BigUint,
     ) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
@@ -123,7 +123,7 @@ pub trait EsdtTokenManager {
     #[endpoint(burnEsdtToken)]
     fn burn_esdt_token_endpoint(
         &self,
-        token_identifier: BoxedBytes,
+        token_identifier: TokenIdentifier,
         amount: BigUint,
     ) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
@@ -144,7 +144,7 @@ pub trait EsdtTokenManager {
     #[endpoint(transferEsdt)]
     fn transfer_esdt_endpoint(
         &self,
-        token_identifier: BoxedBytes,
+        token_identifier: TokenIdentifier,
         amount: BigUint,
         to: Address,
         poly_tx_hash: H256,
@@ -178,7 +178,7 @@ pub trait EsdtTokenManager {
 
     // endpoints
 
-    #[payable]
+    #[payable("EGLD")]
     #[endpoint(wrapEgld)]
     fn wrap_egld(&self, #[payment] payment: BigUint) -> SCResult<()> {
         require!(payment > 0, "Payment must be more than 0");
@@ -207,17 +207,25 @@ pub trait EsdtTokenManager {
         Ok(())
     }
 
+    #[payable("*")]
     #[endpoint(unwrapEgld)]
-    fn unwrap_egld(&self) -> SCResult<()> {
-        let token_identifier = self.get_esdt_token_identifier_boxed();
+    fn unwrap_egld(
+        &self,
+        #[payment] wrapped_egld_payment: BigUint,
+        #[payment_token] token_identifier: TokenIdentifier,
+    ) -> SCResult<()> {
+        require!(
+            !self.is_empty_wrapped_egld_token_identifier(),
+            "Wrapped eGLD was not issued yet"
+        );
+        require!(token_identifier.is_esdt(), "Only ESDT tokens accepted");
+
         let wrapped_egld_token_identifier = self.get_wrapped_egld_token_identifier();
 
         require!(
             token_identifier == wrapped_egld_token_identifier,
             "Wrong esdt token"
         );
-
-        let wrapped_egld_payment = self.get_esdt_value_big_uint();
 
         require!(wrapped_egld_payment > 0, "Must pay more than 0 tokens!");
         // this should never happen, but we'll check anyway
@@ -229,7 +237,8 @@ pub trait EsdtTokenManager {
         self.add_total_wrapped(&wrapped_egld_token_identifier, &wrapped_egld_payment);
 
         // 1 wrapped eGLD = 1 eGLD, so we pay back the same amount
-        self.send_tx(&self.get_caller(), &wrapped_egld_payment, b"unwrapping");
+        self.send()
+            .direct_egld(&self.get_caller(), &wrapped_egld_payment, b"unwrapping");
 
         Ok(())
     }
@@ -241,13 +250,13 @@ pub trait EsdtTokenManager {
 
     // private
 
-    fn get_esdt_token_identifier_boxed(&self) -> BoxedBytes {
-        BoxedBytes::from(self.get_esdt_token_name())
-    }
+    ///////////////////////////////////////// TODO ////////////////////////////////////////////////////
+    // 1) Rework the flow for simple transfers. Only rely on async_call_raw and callbacks for actual scCalls
+    // 2) Don't use send().direct_egl() for scCalls, as it doesn't work
 
     fn transfer_esdt(
         &self,
-        token_identifier: &BoxedBytes,
+        token_identifier: &TokenIdentifier,
         amount: &BigUint,
         to: &Address,
         func_name: &BoxedBytes,
@@ -266,7 +275,7 @@ pub trait EsdtTokenManager {
 
         self.substract_total_wrapped(token_identifier, amount);
 
-        self.async_call(to, &BigUint::zero(), serializer.as_slice());
+        self.send().async_call_raw(to, &BigUint::zero(), serializer.as_slice());
     }
 
     fn transfer_egld(
@@ -283,9 +292,9 @@ pub trait EsdtTokenManager {
                 serializer.push_argument_bytes(arg.as_slice());
             }
 
-            self.async_call(to, amount, serializer.as_slice());
+            self.send().async_call_raw(to, amount, serializer.as_slice());
         } else {
-            self.async_call(to, amount, &[]);
+            self.send().async_call_raw(to, amount, &[]);
         }
     }
 
@@ -295,20 +304,20 @@ pub trait EsdtTokenManager {
         serializer.push_argument_bytes(&[tx_status as u8]);
 
         // set status in the cross chain management contract
-        self.send_tx(
+        self.send().direct_egld(
             &self.get_cross_chain_management_contract_address(),
             &BigUint::zero(),
             serializer.as_slice(),
         );
     }
 
-    fn add_total_wrapped(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+    fn add_total_wrapped(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
         let mut total_wrapped = self.get_total_wrapped_remaining(token_identifier);
         total_wrapped += amount;
         self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
     }
 
-    fn substract_total_wrapped(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+    fn substract_total_wrapped(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
         let mut total_wrapped = self.get_total_wrapped_remaining(token_identifier);
         total_wrapped -= amount;
         self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
@@ -354,19 +363,19 @@ pub trait EsdtTokenManager {
             &self.get_tx_hash(),
             &EsdtOperation {
                 name: BoxedBytes::from(ESDT_ISSUE_STRING),
-                token_identifier: BoxedBytes::empty(),
+                token_identifier: TokenIdentifier::egld(),
                 amount: initial_supply.clone(),
             },
         );
 
-        self.async_call(
+        self.send().async_call_raw(
             &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
             &BigUint::from(ESDT_ISSUE_COST),
             serializer.as_slice(),
         );
     }
 
-    fn mint_esdt_token(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+    fn mint_esdt_token(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
         let mut serializer = HexCallDataSerializer::new(ESDT_MINT_STRING);
         serializer.push_argument_bytes(token_identifier.as_slice());
         serializer.push_argument_bytes(&amount.to_bytes_be());
@@ -381,14 +390,14 @@ pub trait EsdtTokenManager {
             },
         );
 
-        self.async_call(
+        self.send().async_call_raw(
             &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
             &BigUint::zero(),
             serializer.as_slice(),
         );
     }
 
-    fn burn_esdt_token(&self, token_identifier: &BoxedBytes, amount: &BigUint) {
+    fn burn_esdt_token(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
         let mut serializer = HexCallDataSerializer::new(ESDT_BURN_STRING);
         serializer.push_argument_bytes(token_identifier.as_slice());
         serializer.push_argument_bytes(&amount.to_bytes_be());
@@ -403,7 +412,7 @@ pub trait EsdtTokenManager {
             },
         );
 
-        self.async_call(
+        self.send().async_call_raw(
             &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
             &BigUint::zero(),
             serializer.as_slice(),
@@ -463,7 +472,7 @@ pub trait EsdtTokenManager {
 
     fn perform_esdt_issue_callback(&self, success: bool, initial_supply: &BigUint) {
         // callback is called with ESDTTransfer of the newly issued token, with the amount requested, so we can get the token identifier from the call data
-        let token_identifier = self.get_esdt_token_identifier_boxed();
+        let token_identifier = self.call_value().token();
 
         if success {
             self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
@@ -480,7 +489,7 @@ pub trait EsdtTokenManager {
     fn perform_esdt_mint_callback(
         &self,
         success: bool,
-        token_identifier: &BoxedBytes,
+        token_identifier: &TokenIdentifier,
         amount: &BigUint,
     ) {
         if success {
@@ -493,7 +502,7 @@ pub trait EsdtTokenManager {
     fn perform_esdt_burn_callback(
         &self,
         success: bool,
-        token_identifier: &BoxedBytes,
+        token_identifier: &TokenIdentifier,
         amount: &BigUint,
     ) {
         if success {
@@ -503,16 +512,16 @@ pub trait EsdtTokenManager {
         // nothing to do in case of error
     }
 
-    // STORAGE
+    // STORAGE TODO: Use storage mappers
 
     // 1 eGLD = 1 wrapped eGLD, and they are interchangeable through this contract
 
     #[view(getWrappedEgldTokenIdentifier)]
     #[storage_get("wrappedEgldTokenIdentifier")]
-    fn get_wrapped_egld_token_identifier(&self) -> BoxedBytes;
+    fn get_wrapped_egld_token_identifier(&self) -> TokenIdentifier;
 
     #[storage_set("wrappedEgldTokenIdentifier")]
-    fn set_wrapped_egld_token_identifier(&self, token_identifier: &BoxedBytes);
+    fn set_wrapped_egld_token_identifier(&self, token_identifier: &TokenIdentifier);
 
     #[storage_is_empty("wrappedEgldTokenIdentifier")]
     fn is_empty_wrapped_egld_token_identifier(&self) -> bool;
@@ -522,19 +531,23 @@ pub trait EsdtTokenManager {
 
     #[view(getTotalWrappedRemaining)]
     #[storage_get("totalWrappedRemaining")]
-    fn get_total_wrapped_remaining(&self, token_identifier: &BoxedBytes) -> BigUint;
+    fn get_total_wrapped_remaining(&self, token_identifier: &TokenIdentifier) -> BigUint;
 
     #[storage_set("totalWrappedRemaining")]
-    fn set_total_wrapped_remaining(&self, token_identifier: &BoxedBytes, total_wrapped: &BigUint);
+    fn set_total_wrapped_remaining(
+        &self,
+        token_identifier: &TokenIdentifier,
+        total_wrapped: &BigUint,
+    );
 
     // Used to be able to issue, get the identifier, and then add it to whitelist in the other contracts
 
     #[view(getLastIssuedTokenIdentifier)]
     #[storage_get("lastIssuedTokenIdentifier")]
-    fn get_last_issued_token_identifier(&self) -> BoxedBytes;
+    fn get_last_issued_token_identifier(&self) -> TokenIdentifier;
 
     #[storage_set("lastIssuedTokenIdentifier")]
-    fn set_last_issued_token_identifier(&self, token_identifier: &BoxedBytes);
+    fn set_last_issued_token_identifier(&self, token_identifier: &TokenIdentifier);
 
     // cross chain management
 
