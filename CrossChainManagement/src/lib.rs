@@ -120,28 +120,26 @@ pub trait CrossChainManagement {
     fn burn_tokens(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        let mut burn_pool_token_identifier_list = self.get_burn_pool_token_identifiers();
-        match burn_pool_token_identifier_list
-            .iter()
-            .position(|ident| ident == &token_identifier)
-        {
-            Some(index) => {
-                burn_pool_token_identifier_list.remove(index);
+        let mut burn_amount_for_token_mapper = self.get_burn_amount_for_token_mapper();
+
+        match burn_amount_for_token_mapper.get(&token_identifier) {
+            Some(amount) => {
+                burn_amount_for_token_mapper.remove(&token_identifier);
+
+                self.burn_esdt_token(&token_identifier, &amount);
+
+                Ok(())
             }
-            None => return sc_error!("token is not in burn list"),
-        };
-
-        let amount = self.get_burn_amount_for_token(&token_identifier);
-
-        self.set_burn_amount_for_token(&token_identifier, &BigUint::zero());
-
-        self.burn_esdt_token(&token_identifier, &amount);
-
-        Ok(())
+            None => sc_error!("token is not in burn list"),
+        }
     }
 
     #[endpoint(refundTokens)]
-    fn refund_tokens(&self, token_identifier: TokenIdentifier, refund_address: Address) -> SCResult<()> {
+    fn refund_tokens(
+        &self,
+        token_identifier: TokenIdentifier,
+        refund_address: Address,
+    ) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
         let mut refund_pool_address_list = self.get_refund_pool_address_list();
@@ -271,7 +269,7 @@ pub trait CrossChainManagement {
         method_name: BoxedBytes,
         method_args: Vec<BoxedBytes>,
         #[payment_token] token_identifier: TokenIdentifier,
-        #[payment] esdt_value: BigUint
+        #[payment] esdt_value: BigUint,
     ) -> SCResult<()> {
         require!(
             !self.is_empty_token_management_contract_address(),
@@ -527,20 +525,17 @@ pub trait CrossChainManagement {
         }
 
         let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
+        let mut burn_amount_for_token_mapper = self.get_burn_amount_for_token_mapper();
+
         let mut current_burn_amount =
-            self.get_burn_amount_for_token(&esdt_payment.token_identifier);
-
-        if current_burn_amount == 0 {
-            let mut burn_pool_token_identifiers_list = self.get_burn_pool_token_identifiers();
-
-            burn_pool_token_identifiers_list.push(esdt_payment.token_identifier.clone());
-
-            self.set_burn_pool_token_identifiers(&burn_pool_token_identifiers_list);
-        }
+            match burn_amount_for_token_mapper.get(&esdt_payment.token_identifier) {
+                Some(amount) => amount,
+                None => BigUint::zero(),
+            };
 
         current_burn_amount += esdt_payment.amount;
 
-        self.set_burn_amount_for_token(&esdt_payment.token_identifier, &current_burn_amount);
+        burn_amount_for_token_mapper.insert(esdt_payment.token_identifier, current_burn_amount);
 
         self.clear_payment_for_tx(poly_tx_hash);
     }
@@ -609,7 +604,8 @@ pub trait CrossChainManagement {
         serializer.push_argument_bytes(&amount.to_bytes_be());
 
         // TODO: Replace with send_esdt
-        self.send().direct_egld(refund_address, &BigUint::zero(), serializer.as_slice());
+        self.send()
+            .direct_egld(refund_address, &BigUint::zero(), serializer.as_slice());
     }
 
     // events
@@ -655,19 +651,10 @@ pub trait CrossChainManagement {
     // burn pool - vec of token names, then in a separate storage key we store the amount
     // this makes it easier to search for one specific burn token amount and update it
 
-    #[view(getBurnPoolTokenIdentifiers)]
-    #[storage_get("burnPoolTokenIdentifiers")]
-    fn get_burn_pool_token_identifiers(&self) -> Vec<TokenIdentifier>;
-
-    #[storage_set("burnPoolTokenIdentifiers")]
-    fn set_burn_pool_token_identifiers(&self, burn_pool: &[TokenIdentifier]);
-
-    #[view(getBurnAmountForToken)]
-    #[storage_get("burnAmountForToken")]
-    fn get_burn_amount_for_token(&self, token_identifier: &TokenIdentifier) -> BigUint;
-
-    #[storage_set("burnAmountForToken")]
-    fn set_burn_amount_for_token(&self, token_identifier: &TokenIdentifier, amount: &BigUint);
+    #[storage_mapper("burnAmountForToken")]
+    fn get_burn_amount_for_token_mapper(
+        &self,
+    ) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
 
     // refund pool - split into 3 mappings
     // first, a list of all the addresses that are due for a refund
@@ -684,7 +671,10 @@ pub trait CrossChainManagement {
 
     #[view(getRefundPoolTokensListForAddress)]
     #[storage_get("refundPoolTokensListForAddress")]
-    fn get_refund_pool_tokens_list_for_address(&self, refund_address: &Address) -> Vec<TokenIdentifier>;
+    fn get_refund_pool_tokens_list_for_address(
+        &self,
+        refund_address: &Address,
+    ) -> Vec<TokenIdentifier>;
 
     #[storage_set("refundPoolTokensListForAddress")]
     fn set_refund_pool_tokens_list_for_address(
