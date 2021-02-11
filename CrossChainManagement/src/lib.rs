@@ -414,6 +414,17 @@ pub trait CrossChainManagement {
         }
     }
 
+    #[view(getBurnTokensList)]
+    fn get_burn_tokens_list(&self) -> Vec<TokenIdentifier> {
+        let mut token_list = Vec::new();
+        
+        for token_identifier in self.get_burn_amount_for_token_mapper().keys() {
+            token_list.push(token_identifier);
+        }
+
+        token_list
+    }
+
     // callbacks
 
     #[callback]
