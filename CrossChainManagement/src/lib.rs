@@ -647,9 +647,8 @@ pub trait CrossChainManagement {
 
     #[storage_is_empty("paymentForTx")]
     fn is_empty_payment_for_tx(&self, poly_tx_hash: &H256) -> bool;
-
-    // burn pool - vec of token names, then in a separate storage key we store the amount
-    // this makes it easier to search for one specific burn token amount and update it
+    
+    // burn amounts for tokens
 
     #[storage_mapper("burnAmountForToken")]
     fn get_burn_amount_for_token_mapper(
