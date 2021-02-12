@@ -117,9 +117,7 @@ pub trait BlockHeaderSync {
                 let height = header.height;
 
                 // update key heights
-                let mut key_heights = self.get_key_height_list(chain_id);
-                key_heights.push(height);
-                self.set_key_height_list(chain_id, &key_heights);
+                self.get_key_height_list_mapper(chain_id).push_back(height);
 
                 // update consensus peer list
                 if !chain_config.peers.is_empty() {
@@ -153,16 +151,13 @@ pub trait BlockHeaderSync {
     /// If the list is empty (i.e. None is returned from last()),  
     /// then it means genesis header was not initialized
     fn find_key_height(&self, chain_id: u64, height: u32) -> Option<u32> {
-        let key_height_list = self.get_key_height_list(chain_id);
-        let last_key_height = key_height_list.last();
-
-        match last_key_height {
-            Some(k) => {
-                if k > &height {
+        match self.get_key_height_list_mapper(chain_id).back() {
+            Some(last_key_height) => {
+                if last_key_height > height {
                     None
                 }
                 else {
-                    Some(*k)
+                    Some(last_key_height)
                 }
             },
             None => None
@@ -265,9 +260,6 @@ pub trait BlockHeaderSync {
 
     // key height list
 
-    #[storage_get("keyHeightList")]
-    fn get_key_height_list(&self, chain_id: u64) -> Vec<u32>;
-
-    #[storage_set("keyHeightList")]
-    fn set_key_height_list(&self, chain_id: u64, list: &[u32]);
+    #[storage_mapper("keyHeightList")]
+    fn get_key_height_list_mapper(&self, chain_id: u64) -> LinkedListMapper<Self::Storage, u32>;
 }
