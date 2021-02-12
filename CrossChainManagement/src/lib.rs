@@ -333,7 +333,7 @@ pub trait CrossChainManagement {
 
     #[endpoint(getNextPendingCrossChainTx)]
     fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
-        match self.get_pending_cross_chain_tx_list_mapper().front() {
+        match self.get_pending_cross_chain_tx_list_mapper().pop_front() {
             Some(poly_tx_hash) => Some(self.get_tx_by_hash(&poly_tx_hash)),
             None => None
         }
