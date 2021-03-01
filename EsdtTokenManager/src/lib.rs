@@ -111,7 +111,7 @@ pub trait EsdtTokenManager {
         only_owner!(self, "only owner may call this function");
 
         require!(
-            self.get_total_wrapped_remaining(&token_identifier) > 0,
+            self.was_token_issued(&token_identifier),
             "Token must be issued first"
         );
         require!(amount > 0, "Amount minted must be more than 0");
@@ -158,7 +158,7 @@ pub trait EsdtTokenManager {
         );
 
         let total_wrapped = self.get_total_wrapped_remaining(&token_identifier);
-        if total_wrapped <= amount {
+        if total_wrapped < amount {
             self.complete_tx(&poly_tx_hash, TransactionStatus::OutOfFunds);
         } else {
             // save the poly_tx_hash to be used in the callback
@@ -193,7 +193,7 @@ pub trait EsdtTokenManager {
         let wrapped_egld_left = self.get_total_wrapped_remaining(&wrapped_egld_token_identifier);
 
         require!(
-            wrapped_egld_left > payment,
+            wrapped_egld_left >= payment,
             "Contract does not have enough wrapped eGLD. Please try again once more is minted."
         );
 
@@ -244,9 +244,24 @@ pub trait EsdtTokenManager {
         Ok(())
     }
 
+    // views
+
     #[view(getLockedEgldBalance)]
-    fn get_locked_egld_balance() -> BigUint {
+    fn get_locked_egld_balance(&self) -> BigUint {
         self.get_sc_balance()
+    }
+
+    #[view(getTotalWrappedremaining)]
+    fn get_total_wrapped_remaining(&self, token_identifier: &TokenIdentifier) -> BigUint {
+        self.total_wrapped_remaining()
+            .get(token_identifier)
+            .unwrap_or_else(|| BigUint::zero())
+    }
+
+    #[view(wasTokenIssued)]
+    fn was_token_issued(&self, token_identifier: &TokenIdentifier) -> bool {
+        self.total_wrapped_remaining()
+            .contains_key(token_identifier)
     }
 
     // private
@@ -324,6 +339,11 @@ pub trait EsdtTokenManager {
         let mut total_wrapped = self.get_total_wrapped_remaining(token_identifier);
         total_wrapped -= amount;
         self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
+    }
+
+    fn set_total_wrapped_remaining(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
+        self.total_wrapped_remaining()
+            .insert(token_identifier.clone(), amount.clone());
     }
 
     fn issue_esdt_token(
@@ -508,18 +528,9 @@ pub trait EsdtTokenManager {
     fn is_empty_wrapped_egld_token_identifier(&self) -> bool;
 
     // The total remaining wrapped tokens of each type owned by this SC. Stored so we don't have to query everytime.
-    // An issued token will always have a balance of at least "1"
 
-    #[view(getTotalWrappedRemaining)]
-    #[storage_get("totalWrappedRemaining")]
-    fn get_total_wrapped_remaining(&self, token_identifier: &TokenIdentifier) -> BigUint;
-
-    #[storage_set("totalWrappedRemaining")]
-    fn set_total_wrapped_remaining(
-        &self,
-        token_identifier: &TokenIdentifier,
-        total_wrapped: &BigUint,
-    );
+    #[storage_mapper("totalWrappedRemaining")]
+    fn total_wrapped_remaining(&self) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
 
     // Used to be able to issue, get the identifier, and then add it to whitelist in the other contracts
 

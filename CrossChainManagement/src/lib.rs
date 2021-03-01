@@ -46,7 +46,7 @@ pub trait CrossChainManagement {
     fn add_token_to_whitelist(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        if self.get_token_whitelist_mapper().insert(token_identifier) {
+        if self.token_whitelist().insert(token_identifier) {
             Ok(())
         } else {
             sc_error!("Token was already in whitelist")
@@ -57,7 +57,7 @@ pub trait CrossChainManagement {
     fn remove_token_from_whitelist(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        if self.get_token_whitelist_mapper().remove(&token_identifier) {
+        if self.token_whitelist().remove(&token_identifier) {
             Ok(())
         } else {
             sc_error!("Token was not in whitelist")
@@ -69,7 +69,7 @@ pub trait CrossChainManagement {
         only_owner!(self, "only owner may call this function");
 
         if self
-            .get_approved_address_list_mapper()
+            .approved_address_list()
             .insert(approved_address)
         {
             Ok(())
@@ -83,7 +83,7 @@ pub trait CrossChainManagement {
         only_owner!(self, "only owner may call this function");
 
         if self
-            .get_approved_address_list_mapper()
+            .approved_address_list()
             .remove(&approved_address)
         {
             Ok(())
@@ -96,7 +96,7 @@ pub trait CrossChainManagement {
     fn burn_tokens(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        let mut burn_amount_for_token_mapper = self.get_burn_amount_mapper();
+        let mut burn_amount_for_token_mapper = self.burn_amounts();
 
         match burn_amount_for_token_mapper.get(&token_identifier) {
             Some(amount) => {
@@ -118,7 +118,7 @@ pub trait CrossChainManagement {
     ) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        let mut refund_amount_mapper = self.get_refund_amount_mapper(&refund_address);
+        let mut refund_amount_mapper = self.refund_amounts(&refund_address);
         let refund_amount = match refund_amount_mapper.get(&token_identifier) {
             Some(amount) => amount,
             None => return sc_error!("token is not on the address' refund list"),
@@ -127,7 +127,7 @@ pub trait CrossChainManagement {
         refund_amount_mapper.remove(&token_identifier);
 
         if refund_amount_mapper.is_empty() {
-            self.get_refund_address_set_mapper().remove(&refund_address);
+            self.refund_addresses().remove(&refund_address);
         }
 
         self.refund_esdt_token(&token_identifier, &refund_address, &refund_amount);
@@ -176,7 +176,7 @@ pub trait CrossChainManagement {
         tx_status: TransactionStatus,
     ) -> SCResult<()> {
         require!(
-            self.get_approved_address_list_mapper()
+            self.approved_address_list()
                 .contains(&self.get_caller()),
             "Caller is not an approved address"
         );
@@ -240,7 +240,7 @@ pub trait CrossChainManagement {
 
         if token_identifier.is_esdt() && esdt_value > 0 {
             require!(
-                self.get_token_whitelist_mapper()
+                self.token_whitelist()
                     .contains(&token_identifier),
                 "Token is not on whitelist. Transaction rejected"
             );
@@ -258,7 +258,7 @@ pub trait CrossChainManagement {
 
         self.set_tx_by_hash(&tx.hash, &tx);
         self.set_tx_status(&tx.hash, TransactionStatus::Pending);
-        self.get_pending_cross_chain_tx_list_mapper()
+        self.pending_cross_chain_tx_list()
             .push_back(tx.hash.clone());
         self.set_cross_chain_tx_id(to_chain_id, tx_id + 1);
 
@@ -298,7 +298,7 @@ pub trait CrossChainManagement {
 
         if token_identifier.is_esdt() && amount > 0 {
             require!(
-                self.get_token_whitelist_mapper()
+                self.token_whitelist()
                     .contains(&token_identifier),
                 "Token is not on whitelist. Transaction rejected"
             );
@@ -338,7 +338,7 @@ pub trait CrossChainManagement {
 
     #[endpoint(getNextPendingCrossChainTx)]
     fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
-        match self.get_pending_cross_chain_tx_list_mapper().pop_front() {
+        match self.pending_cross_chain_tx_list().pop_front() {
             Some(poly_tx_hash) => Some(self.get_tx_by_hash(&poly_tx_hash)),
             None => None,
         }
@@ -359,7 +359,7 @@ pub trait CrossChainManagement {
     fn get_burn_tokens_list(&self) -> Vec<TokenIdentifier> {
         let mut token_list = Vec::new();
 
-        for token_identifier in self.get_burn_amount_mapper().keys() {
+        for token_identifier in self.burn_amounts().keys() {
             token_list.push(token_identifier);
         }
 
@@ -478,7 +478,7 @@ pub trait CrossChainManagement {
         }
 
         let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
-        let mut burn_amount_for_token_mapper = self.get_burn_amount_mapper();
+        let mut burn_amount_for_token_mapper = self.burn_amounts();
 
         let mut current_burn_amount =
             match burn_amount_for_token_mapper.get(&esdt_payment.token_identifier) {
@@ -501,9 +501,9 @@ pub trait CrossChainManagement {
         let refund_address = self.get_tx_by_hash(poly_tx_hash).from_contract_address;
         let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
 
-        let mut refund_amount_mapper = self.get_refund_amount_mapper(&refund_address);
+        let mut refund_amount_mapper = self.refund_amounts(&refund_address);
         if refund_amount_mapper.is_empty() {
-            self.get_refund_address_set_mapper().insert(refund_address);
+            self.refund_addresses().insert(refund_address);
         }
 
         let mut current_refund_amount =
@@ -589,15 +589,15 @@ pub trait CrossChainManagement {
     // burn amounts for tokens
 
     #[storage_mapper("burnAmount")]
-    fn get_burn_amount_mapper(&self) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
+    fn burn_amounts(&self) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
 
     // refund pool
 
-    #[storage_mapper("refundAddressSet")]
-    fn get_refund_address_set_mapper(&self) -> SetMapper<Self::Storage, Address>;
+    #[storage_mapper("refundAddresses")]
+    fn refund_addresses(&self) -> SetMapper<Self::Storage, Address>;
 
-    #[storage_mapper("refundAmount")]
-    fn get_refund_amount_mapper(
+    #[storage_mapper("refundAmounts")]
+    fn refund_amounts(
         &self,
         address: &Address,
     ) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
@@ -634,7 +634,7 @@ pub trait CrossChainManagement {
     // list of hashes for pending tx from elrond to another chain
 
     #[storage_mapper("pendingCrosschainTxList")]
-    fn get_pending_cross_chain_tx_list_mapper(&self) -> LinkedListMapper<Self::Storage, H256>;
+    fn pending_cross_chain_tx_list(&self) -> LinkedListMapper<Self::Storage, H256>;
 
     // transaction status
 
@@ -648,10 +648,10 @@ pub trait CrossChainManagement {
     // Token whitelist
 
     #[storage_mapper("tokenWhitelist")]
-    fn get_token_whitelist_mapper(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
+    fn token_whitelist(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
 
     // Approved address list - These addresses can mark transactions as executed/rejected and trigger a burn/refund respectively
 
     #[storage_mapper("approvedAddressList")]
-    fn get_approved_address_list_mapper(&self) -> SetMapper<Self::Storage, Address>;
+    fn approved_address_list(&self) -> SetMapper<Self::Storage, Address>;
 }
