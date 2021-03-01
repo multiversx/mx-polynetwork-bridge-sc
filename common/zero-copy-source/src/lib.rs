@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{Address, BoxedBytes, H256, Vec};
+use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;

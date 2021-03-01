@@ -59,7 +59,7 @@ impl<'a> From<&'a [u8]> for Signature {
 // byte slice to hex converter
 
 pub mod hex_converter {
-    use elrond_wasm::{BoxedBytes, Vec};
+    use elrond_wasm::types::{BoxedBytes, Vec};
 
     pub fn half_byte_to_hex_digit(num: u8) -> u8 {
         if num < 10 {

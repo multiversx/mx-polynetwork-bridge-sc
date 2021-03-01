@@ -1,12 +1,12 @@
 #![no_std]
 
-use elrond_wasm::elrond_codec::*;
-use elrond_wasm::{derive_imports, Address, api::BigUintApi, TokenIdentifier};
+use elrond_wasm::{api::BigUintApi, elrond_codec::*};
+use elrond_wasm::types::{Address, TokenIdentifier};
 
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
-derive_imports!();
+elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi)]
 pub struct EsdtPayment<BigUint: BigUintApi> {

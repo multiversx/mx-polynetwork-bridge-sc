@@ -1,12 +1,12 @@
 #![no_std]
 
-use elrond_wasm::{Address, BoxedBytes, H256, derive_imports};
+use elrond_wasm::types::{Address, BoxedBytes, H256};
 use elrond_wasm::elrond_codec::*;
 
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
-derive_imports!();
+elrond_wasm::derive_imports!();
 
 #[derive(NestedDecode, NestedEncode, TopDecode, TopEncode, TypeAbi, PartialEq)]
 pub enum TransactionStatus {

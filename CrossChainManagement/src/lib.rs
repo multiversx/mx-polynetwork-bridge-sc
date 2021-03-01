@@ -20,13 +20,7 @@ const ESDT_SYSTEM_SC_ADDRESS_ARRAY: [u8; 32] = [
 
 #[elrond_wasm_derive::callable(BlockHeaderSyncProxy)]
 pub trait BlockHeaderSync {
-    #[rustfmt::skip]
-	#[callback(get_header_by_height_callback)]
-    fn getHeaderByHeight(&self, chain_id: u64, height: u32,
-        #[callback_arg] tx: &Transaction,
-        #[callback_arg] token_identifier: &TokenIdentifier,
-        #[callback_arg] amount: &BigUint
-    );
+    fn getHeaderByHeight(&self, chain_id: u64, height: u32) -> ContractCall<BigUint>;
 }
 
 #[elrond_wasm_derive::contract(CrossChainManagementImpl)]
@@ -54,8 +48,7 @@ pub trait CrossChainManagement {
 
         if self.get_token_whitelist_mapper().insert(token_identifier) {
             Ok(())
-        }
-        else {
+        } else {
             sc_error!("Token was already in whitelist")
         }
     }
@@ -66,8 +59,7 @@ pub trait CrossChainManagement {
 
         if self.get_token_whitelist_mapper().remove(&token_identifier) {
             Ok(())
-        }
-        else {
+        } else {
             sc_error!("Token was not in whitelist")
         }
     }
@@ -76,10 +68,12 @@ pub trait CrossChainManagement {
     fn add_address_to_approved_list(&self, approved_address: Address) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        if self.get_approved_address_list_mapper().insert(approved_address) {
+        if self
+            .get_approved_address_list_mapper()
+            .insert(approved_address)
+        {
             Ok(())
-        }
-        else {
+        } else {
             sc_error!("Address was already in the list")
         }
     }
@@ -88,10 +82,12 @@ pub trait CrossChainManagement {
     fn remove_address_from_approved_list(&self, approved_address: Address) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        if self.get_approved_address_list_mapper().remove(&approved_address) {
+        if self
+            .get_approved_address_list_mapper()
+            .remove(&approved_address)
+        {
             Ok(())
-        }
-        else {
+        } else {
             sc_error!("Address was not in the list")
         }
     }
@@ -125,7 +121,7 @@ pub trait CrossChainManagement {
         let mut refund_amount_mapper = self.get_refund_amount_mapper(&refund_address);
         let refund_amount = match refund_amount_mapper.get(&token_identifier) {
             Some(amount) => amount,
-            None => return sc_error!("token is not on the address' refund list")
+            None => return sc_error!("token is not on the address' refund list"),
         };
 
         refund_amount_mapper.remove(&token_identifier);
@@ -180,7 +176,8 @@ pub trait CrossChainManagement {
         tx_status: TransactionStatus,
     ) -> SCResult<()> {
         require!(
-            self.get_approved_address_list_mapper().contains(&self.get_caller()),
+            self.get_approved_address_list_mapper()
+                .contains(&self.get_caller()),
             "Caller is not an approved address"
         );
 
@@ -243,7 +240,8 @@ pub trait CrossChainManagement {
 
         if token_identifier.is_esdt() && esdt_value > 0 {
             require!(
-                self.get_token_whitelist_mapper().contains(&token_identifier),
+                self.get_token_whitelist_mapper()
+                    .contains(&token_identifier),
                 "Token is not on whitelist. Transaction rejected"
             );
 
@@ -260,7 +258,8 @@ pub trait CrossChainManagement {
 
         self.set_tx_by_hash(&tx.hash, &tx);
         self.set_tx_status(&tx.hash, TransactionStatus::Pending);
-        self.get_pending_cross_chain_tx_list_mapper().push_back(tx.hash.clone());
+        self.get_pending_cross_chain_tx_list_mapper()
+            .push_back(tx.hash.clone());
         self.set_cross_chain_tx_id(to_chain_id, tx_id + 1);
 
         self.create_tx_event(&tx);
@@ -276,7 +275,7 @@ pub trait CrossChainManagement {
         tx: Transaction,
         token_identifier: TokenIdentifier,
         amount: BigUint,
-    ) -> SCResult<()> {
+    ) -> SCResult<AsyncCall<BigUint>> {
         require!(
             !self.is_empty_token_management_contract_address(),
             "token management contract address not set"
@@ -299,16 +298,22 @@ pub trait CrossChainManagement {
 
         if token_identifier.is_esdt() && amount > 0 {
             require!(
-                self.get_token_whitelist_mapper().contains(&token_identifier),
+                self.get_token_whitelist_mapper()
+                    .contains(&token_identifier),
                 "Token is not on whitelist. Transaction rejected"
             );
         }
 
         let contract_address = self.get_header_sync_contract_address();
-        let proxy = contract_proxy!(self, &contract_address, BlockHeaderSync);
-        proxy.getHeaderByHeight(from_chain_id, height, &tx, &token_identifier, &amount);
 
-        Ok(())
+        Ok(contract_call!(self, contract_address, BlockHeaderSyncProxy)
+            .getHeaderByHeight(from_chain_id, height)
+            .async_call()
+            .with_callback(self.callbacks().get_header_by_height_callback(
+                tx,
+                token_identifier,
+                amount,
+            )))
     }
 
     #[endpoint(processPendingTx)]
@@ -335,7 +340,7 @@ pub trait CrossChainManagement {
     fn get_next_pending_cross_chain_tx() -> Option<Transaction> {
         match self.get_pending_cross_chain_tx_list_mapper().pop_front() {
             Some(poly_tx_hash) => Some(self.get_tx_by_hash(&poly_tx_hash)),
-            None => None
+            None => None,
         }
     }
 
@@ -374,10 +379,10 @@ pub trait CrossChainManagement {
     #[callback]
     fn get_header_by_height_callback(
         &self,
-        result: AsyncCallResult<Option<Header>>,
-        #[callback_arg] tx: Transaction,
-        #[callback_arg] token_identifier: TokenIdentifier,
-        #[callback_arg] amount: BigUint,
+        #[call_result] result: AsyncCallResult<Option<Header>>,
+        tx: Transaction,
+        token_identifier: TokenIdentifier,
+        amount: BigUint,
     ) {
         match result {
             AsyncCallResult::Ok(opt_header) => {
@@ -500,11 +505,12 @@ pub trait CrossChainManagement {
         if refund_amount_mapper.is_empty() {
             self.get_refund_address_set_mapper().insert(refund_address);
         }
-        
-        let mut current_refund_amount = match refund_amount_mapper.get(&esdt_payment.token_identifier) {
-            Some(amount) => amount,
-            None => BigUint::zero()
-        };
+
+        let mut current_refund_amount =
+            match refund_amount_mapper.get(&esdt_payment.token_identifier) {
+                Some(amount) => amount,
+                None => BigUint::zero(),
+            };
 
         current_refund_amount += esdt_payment.amount;
 
@@ -583,14 +589,12 @@ pub trait CrossChainManagement {
     // burn amounts for tokens
 
     #[storage_mapper("burnAmount")]
-    fn get_burn_amount_mapper(
-        &self,
-    ) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
+    fn get_burn_amount_mapper(&self) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
 
     // refund pool
 
-	#[storage_mapper("refundAddressSet")]
-	fn get_refund_address_set_mapper(&self) -> SetMapper<Self::Storage, Address>;
+    #[storage_mapper("refundAddressSet")]
+    fn get_refund_address_set_mapper(&self) -> SetMapper<Self::Storage, Address>;
 
     #[storage_mapper("refundAmount")]
     fn get_refund_amount_mapper(
@@ -644,10 +648,10 @@ pub trait CrossChainManagement {
     // Token whitelist
 
     #[storage_mapper("tokenWhitelist")]
-	fn get_token_whitelist_mapper(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
+    fn get_token_whitelist_mapper(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
 
     // Approved address list - These addresses can mark transactions as executed/rejected and trigger a burn/refund respectively
 
     #[storage_mapper("approvedAddressList")]
-	fn get_approved_address_list_mapper(&self) -> SetMapper<Self::Storage, Address>;
+    fn get_approved_address_list_mapper(&self) -> SetMapper<Self::Storage, Address>;
 }

@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::{Address, BoxedBytes, H256, Vec, derive_imports};
+use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
@@ -12,7 +12,7 @@ pub mod peer_config;
 pub mod chain_config;
 pub mod vbft_block_info;
 
-derive_imports!();
+elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi, Debug, PartialEq)]
 pub struct Header {

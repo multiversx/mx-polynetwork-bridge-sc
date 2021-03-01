@@ -27,11 +27,12 @@ const EGLD_DECIMALS: u8 = 18;
 
 const COMPLETE_TX_ENDPOINT_NAME: &[u8] = b"completeTx";
 
-#[derive(NestedEncode, NestedDecode, TopEncode, TopDecode)]
-pub struct EsdtOperation<BigUint: BigUintApi> {
-    name: BoxedBytes,
-    token_identifier: TokenIdentifier,
-    amount: BigUint,
+#[derive(TopEncode, TopDecode)]
+pub enum EsdtOperation<BigUint: BigUintApi> {
+    None,
+    Issue,
+    Mint(TokenIdentifier, BigUint), // token + amount minted
+    Burn(TokenIdentifier, BigUint), // token + amount burned
 }
 
 #[elrond_wasm_derive::contract(EsdtTokenManagerImpl)]
@@ -43,7 +44,7 @@ pub trait EsdtTokenManager {
 
     // endpoints - owner-only
 
-    #[payable]
+    #[payable("EGLD")]
     #[endpoint(performWrappedEgldIssue)]
     fn perform_wrapped_egld_issue(
         &self,
@@ -72,7 +73,7 @@ pub trait EsdtTokenManager {
         Ok(())
     }
 
-    #[payable]
+    #[payable("EGLD")]
     #[endpoint(issueEsdtToken)]
     fn issue_esdt_token_endpoint(
         &self,
@@ -273,9 +274,10 @@ pub trait EsdtTokenManager {
             }
         }
 
-        self.substract_total_wrapped(token_identifier, amount);
+        self.subtract_total_wrapped(token_identifier, amount);
 
-        self.send().async_call_raw(to, &BigUint::zero(), serializer.as_slice());
+        self.send()
+            .async_call_raw(to, &BigUint::zero(), serializer.as_slice());
     }
 
     fn transfer_egld(
@@ -292,7 +294,8 @@ pub trait EsdtTokenManager {
                 serializer.push_argument_bytes(arg.as_slice());
             }
 
-            self.send().async_call_raw(to, amount, serializer.as_slice());
+            self.send()
+                .async_call_raw(to, amount, serializer.as_slice());
         } else {
             self.send().async_call_raw(to, amount, &[]);
         }
@@ -317,7 +320,7 @@ pub trait EsdtTokenManager {
         self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
     }
 
-    fn substract_total_wrapped(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
+    fn subtract_total_wrapped(&self, token_identifier: &TokenIdentifier, amount: &BigUint) {
         let mut total_wrapped = self.get_total_wrapped_remaining(token_identifier);
         total_wrapped -= amount;
         self.set_total_wrapped_remaining(token_identifier, &total_wrapped);
@@ -359,14 +362,7 @@ pub trait EsdtTokenManager {
         serializer.push_argument_bytes(&b"false"[..]);
 
         // save data for callback
-        self.set_temporary_storage_esdt_operation(
-            &self.get_tx_hash(),
-            &EsdtOperation {
-                name: BoxedBytes::from(ESDT_ISSUE_STRING),
-                token_identifier: TokenIdentifier::egld(),
-                amount: initial_supply.clone(),
-            },
-        );
+        self.set_temporary_storage_esdt_operation(&self.get_tx_hash(), &EsdtOperation::Issue);
 
         self.send().async_call_raw(
             &Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
@@ -383,11 +379,7 @@ pub trait EsdtTokenManager {
         // save data for callback
         self.set_temporary_storage_esdt_operation(
             &self.get_tx_hash(),
-            &EsdtOperation {
-                name: BoxedBytes::from(ESDT_MINT_STRING),
-                token_identifier: token_identifier.clone(),
-                amount: amount.clone(),
-            },
+            &EsdtOperation::Mint(token_identifier.clone(), amount.clone()),
         );
 
         self.send().async_call_raw(
@@ -405,11 +397,7 @@ pub trait EsdtTokenManager {
         // save data for callback
         self.set_temporary_storage_esdt_operation(
             &self.get_tx_hash(),
-            &EsdtOperation {
-                name: BoxedBytes::from(ESDT_BURN_STRING),
-                token_identifier: token_identifier.clone(),
-                amount: amount.clone(),
-            },
+            &EsdtOperation::Burn(token_identifier.clone(), amount.clone()),
         );
 
         self.send().async_call_raw(
@@ -422,35 +410,27 @@ pub trait EsdtTokenManager {
     // callbacks
 
     #[callback_raw]
-    fn callback_raw(&self, result: Vec<Vec<u8>>) {
-        // "0" is serialized as "nothing", so len == 0 for the first item is error code of 0, which means success
-        let success = result[0].len() == 0;
+    fn callback_raw(&self, #[var_args] result: AsyncCallResult<VarArgs<BoxedBytes>>) {
+        let success = match result {
+            AsyncCallResult::Ok(_) => true,
+            AsyncCallResult::Err(_) => false,
+        };
         let original_tx_hash = self.get_tx_hash();
 
         // if this is empty, it means this callBack comes from an issue ESDT call
         if self.is_empty_temporary_storage_poly_tx_hash(&original_tx_hash) {
-            // if this is also empty, then there is nothing to do in the callback
-            if self.is_empty_temporary_storage_esdt_operation(&original_tx_hash) {
-                return;
-            }
-
             let esdt_operation = self.get_temporary_storage_esdt_operation(&original_tx_hash);
-
-            if esdt_operation.name.as_slice() == ESDT_ISSUE_STRING {
-                self.perform_esdt_issue_callback(success, &esdt_operation.amount);
-            } else if esdt_operation.name.as_slice() == ESDT_MINT_STRING {
-                self.perform_esdt_mint_callback(
-                    success,
-                    &esdt_operation.token_identifier,
-                    &esdt_operation.amount,
-                );
-            } else if esdt_operation.name.as_slice() == ESDT_BURN_STRING {
-                self.perform_esdt_burn_callback(
-                    success,
-                    &esdt_operation.token_identifier,
-                    &esdt_operation.amount,
-                );
-            }
+            match esdt_operation {
+                // if this is also empty, then there is nothing to do in the callback
+                EsdtOperation::None => return,
+                EsdtOperation::Issue => self.perform_esdt_issue_callback(success),
+                EsdtOperation::Mint(token_identifier, amount) => {
+                    self.perform_esdt_mint_callback(success, &token_identifier, &amount)
+                }
+                EsdtOperation::Burn(token_identifier, amount) => {
+                    self.perform_esdt_burn_callback(success, &token_identifier, &amount)
+                }
+            };
 
             self.clear_temporary_storage_esdt_operation(&original_tx_hash);
         } else {
@@ -470,9 +450,10 @@ pub trait EsdtTokenManager {
         }
     }
 
-    fn perform_esdt_issue_callback(&self, success: bool, initial_supply: &BigUint) {
+    fn perform_esdt_issue_callback(&self, success: bool) {
         // callback is called with ESDTTransfer of the newly issued token, with the amount requested, so we can get the token identifier from the call data
         let token_identifier = self.call_value().token();
+        let initial_supply = self.call_value().esdt_value();
 
         if success {
             self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
@@ -506,7 +487,7 @@ pub trait EsdtTokenManager {
         amount: &BigUint,
     ) {
         if success {
-            self.substract_total_wrapped(token_identifier, amount);
+            self.subtract_total_wrapped(token_identifier, amount);
         }
 
         // nothing to do in case of error
