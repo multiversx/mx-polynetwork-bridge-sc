@@ -1,11 +1,11 @@
 #![no_std]
 
-use elrond_wasm::{imports, only_owner, HexCallDataSerializer};
+use elrond_wasm::HexCallDataSerializer;
 use esdt_payment::*;
 use header::*;
 use transaction::*;
 
-imports!();
+elrond_wasm::imports!();
 
 const TRANSFER_ESDT_ENDPOINT_NAME: &[u8] = b"transferEsdt";
 

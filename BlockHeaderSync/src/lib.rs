@@ -6,9 +6,7 @@ use header::peer_config::*;
 
 use util::*;
 
-use elrond_wasm::imports;
-
-imports!();
+elrond_wasm::imports!();
 
 #[elrond_wasm_derive::contract(BlockHeaderSyncImpl)]
 pub trait BlockHeaderSync {

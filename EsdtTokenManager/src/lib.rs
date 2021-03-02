@@ -1,12 +1,12 @@
 #![no_std]
 #![allow(clippy::string_lit_as_bytes)]
 
-use elrond_wasm::{derive_imports, imports, HexCallDataSerializer};
+use elrond_wasm::HexCallDataSerializer;
 
 use transaction::TransactionStatus;
 
-imports!();
-derive_imports!();
+elrond_wasm::imports!();
+elrond_wasm::derive_imports!();
 
 // erd1qqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzllls8a5w6u
 const ESDT_SYSTEM_SC_ADDRESS_ARRAY: [u8; 32] = [
