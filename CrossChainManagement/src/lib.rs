@@ -25,8 +25,9 @@ pub trait BlockHeaderSync {
 pub trait CrossChainManagement {
     #[init]
     fn init(&self, header_sync_contract_address: Address, own_chain_id: u64) {
-        self.set_header_sync_contract_address(&header_sync_contract_address);
-        self.set_own_chain_id(own_chain_id);
+        self.header_sync_contract_address()
+            .set(&header_sync_contract_address);
+        self.own_chain_id().set(&own_chain_id);
     }
 
     // endpoints - owner-only
@@ -35,7 +36,7 @@ pub trait CrossChainManagement {
     fn set_token_management_contract_address_endpoint(&self, address: Address) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        self.set_token_management_contract_address(&address);
+        self.token_management_contract_address().set(&address);
 
         Ok(())
     }
@@ -97,19 +98,19 @@ pub trait CrossChainManagement {
     #[endpoint(completeTx)]
     fn complete_tx(&self, poly_tx_hash: H256, tx_status: TransactionStatus) -> SCResult<()> {
         require!(
-            !self.is_empty_token_management_contract_address(),
+            !self.token_management_contract_address().is_empty(),
             "token management contract address not set"
         );
         require!(
-            self.get_caller() == self.get_token_management_contract_address(),
+            self.get_caller() == self.token_management_contract_address().get(),
             "Only the token manager contract may call this"
         );
         require!(
-            !self.is_empty_tx_by_hash(&poly_tx_hash),
+            !self.tx_by_hash(&poly_tx_hash).is_empty(),
             "Transaction does not exist"
         );
         require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::InProgress,
+            self.tx_status(&poly_tx_hash).get() == TransactionStatus::InProgress,
             "Transaction must be processed as Pending first"
         );
         require!(
@@ -119,7 +120,7 @@ pub trait CrossChainManagement {
             "Transaction status may only be set to OutOfFunds, Executed or Rejected"
         );
 
-        self.set_tx_status(&poly_tx_hash, tx_status);
+        self.tx_status(&poly_tx_hash).set(&tx_status);
 
         Ok(())
     }
@@ -138,19 +139,21 @@ pub trait CrossChainManagement {
         );
 
         require!(
-            !self.is_empty_tx_by_hash(&poly_tx_hash),
+            !self.tx_by_hash(&poly_tx_hash).is_empty(),
             "Transaction does not exist"
         );
         require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::Pending,
+            self.tx_status(&poly_tx_hash).get() == TransactionStatus::Pending,
             "Transaction must be in Pending status"
         );
 
         if tx_status == TransactionStatus::Executed {
-            self.set_tx_status(&poly_tx_hash, TransactionStatus::Executed);
+            self.tx_status(&poly_tx_hash)
+                .set(&TransactionStatus::Executed);
             self.add_tx_payment_to_burn_list(&poly_tx_hash);
         } else if tx_status == TransactionStatus::Rejected {
-            self.set_tx_status(&poly_tx_hash, TransactionStatus::Rejected);
+            self.tx_status(&poly_tx_hash)
+                .set(&TransactionStatus::Rejected);
             self.refund_payment_for_tx(&poly_tx_hash);
         } else {
             return sc_error!("Transaction status may only be set to Executed or Rejected");
@@ -174,11 +177,11 @@ pub trait CrossChainManagement {
         #[payment] esdt_value: BigUint,
     ) -> SCResult<()> {
         require!(
-            !self.is_empty_token_management_contract_address(),
+            !self.token_management_contract_address().is_empty(),
             "token management contract address not set"
         );
         require!(
-            to_chain_id != self.get_own_chain_id(),
+            to_chain_id != self.own_chain_id().get(),
             "Must send to a chain other than Elrond"
         );
         require!(
@@ -186,7 +189,7 @@ pub trait CrossChainManagement {
             "eGLD payment not allowed"
         );
 
-        let tx_id = self.get_cross_chain_tx_id(to_chain_id);
+        let tx_id = self.cross_chain_tx_id(to_chain_id).get();
         let from_contract_address = self.get_caller();
         let mut tx = Transaction {
             hash: H256::zero(),
@@ -205,22 +208,19 @@ pub trait CrossChainManagement {
                 "Token is not on whitelist. Transaction rejected"
             );
 
-            self.set_payment_for_tx(
-                &tx.hash,
-                &EsdtPayment {
-                    sender: from_contract_address,
-                    receiver: to_contract_address,
-                    token_identifier,
-                    amount: esdt_value,
-                },
-            );
+            self.payment_for_tx(&tx.hash).set(&EsdtPayment {
+                sender: from_contract_address,
+                receiver: to_contract_address,
+                token_identifier,
+                amount: esdt_value,
+            });
         }
 
-        self.set_tx_by_hash(&tx.hash, &tx);
-        self.set_tx_status(&tx.hash, TransactionStatus::Pending);
+        self.tx_by_hash(&tx.hash).set(&tx);
+        self.tx_status(&tx.hash).set(&TransactionStatus::Pending);
         self.pending_cross_chain_tx_list()
             .push_back(tx.hash.clone());
-        self.set_cross_chain_tx_id(to_chain_id, tx_id + 1);
+        self.cross_chain_tx_id(to_chain_id).set(&(tx_id + 1));
 
         self.create_tx_event(&tx);
 
@@ -237,11 +237,11 @@ pub trait CrossChainManagement {
         amount: BigUint,
     ) -> SCResult<AsyncCall<BigUint>> {
         require!(
-            !self.is_empty_token_management_contract_address(),
+            !self.token_management_contract_address().is_empty(),
             "token management contract address not set"
         );
         require!(
-            self.get_own_chain_id() == tx.to_chain_id,
+            self.own_chain_id().get() == tx.to_chain_id,
             "This transaction is meant for another chain"
         );
         require!(
@@ -249,7 +249,7 @@ pub trait CrossChainManagement {
             "Wrong transaction hash"
         );
         require!(
-            self.is_empty_tx_by_hash(&tx.hash),
+            self.tx_by_hash(&tx.hash).is_empty(),
             "This transaction was already processed"
         );
         if !self.is_smart_contract(&tx.to_contract_address) && !tx.method_name.is_empty() {
@@ -263,7 +263,7 @@ pub trait CrossChainManagement {
             );
         }
 
-        let contract_address = self.get_header_sync_contract_address();
+        let contract_address = self.header_sync_contract_address().get();
 
         Ok(contract_call!(self, contract_address, BlockHeaderSyncProxy)
             .getHeaderByHeight(from_chain_id, height)
@@ -278,7 +278,7 @@ pub trait CrossChainManagement {
     #[endpoint(processPendingTx)]
     fn process_pending_tx(&self, poly_tx_hash: H256) -> SCResult<TransferEgldExecute<BigUint>> {
         require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::Pending,
+            self.tx_status(&poly_tx_hash).get() == TransactionStatus::Pending,
             "Transaction is not in Pending status"
         );
 
@@ -288,7 +288,7 @@ pub trait CrossChainManagement {
     #[endpoint(retryOutOfFundsTx)]
     fn retry_out_of_funds_tx(&self, poly_tx_hash: H256) -> SCResult<TransferEgldExecute<BigUint>> {
         require!(
-            self.get_tx_status(&poly_tx_hash) == TransactionStatus::OutOfFunds,
+            self.tx_status(&poly_tx_hash).get() == TransactionStatus::OutOfFunds,
             "Transaction is not in OutOfFunds status"
         );
 
@@ -298,7 +298,7 @@ pub trait CrossChainManagement {
     #[endpoint(getNextPendingCrossChainTx)]
     fn get_next_pending_cross_chain_tx() -> OptionalResult<Transaction> {
         match self.pending_cross_chain_tx_list().pop_front() {
-            Some(poly_tx_hash) => OptionalResult::Some(self.get_tx_by_hash(&poly_tx_hash)),
+            Some(poly_tx_hash) => OptionalResult::Some(self.tx_by_hash(&poly_tx_hash).get()),
             None => OptionalResult::None,
         }
     }
@@ -307,8 +307,8 @@ pub trait CrossChainManagement {
 
     #[view(getTxByHash)]
     fn get_tx_by_hash_or_none(&self, poly_tx_hash: H256) -> OptionalResult<Transaction> {
-        if !self.is_empty_tx_by_hash(&poly_tx_hash) {
-            OptionalResult::Some(self.get_tx_by_hash(&poly_tx_hash))
+        if !self.tx_by_hash(&poly_tx_hash).is_empty() {
+            OptionalResult::Some(self.tx_by_hash(&poly_tx_hash).get())
         } else {
             OptionalResult::None
         }
@@ -334,23 +334,23 @@ pub trait CrossChainManagement {
     // deduplicates logic from ProcessPendingTx and RetryOutOfFundsTx
     fn process_tx(&self, poly_tx_hash: &H256) -> SCResult<TransferEgldExecute<BigUint>> {
         require!(
-            !self.is_empty_token_management_contract_address(),
+            !self.token_management_contract_address().is_empty(),
             "token management contract address not set"
         );
         require!(
-            !self.is_empty_tx_by_hash(poly_tx_hash),
+            !self.tx_by_hash(poly_tx_hash).is_empty(),
             "Transaction does not exist"
         );
 
-        let tx = self.get_tx_by_hash(poly_tx_hash);
+        let tx = self.tx_by_hash(poly_tx_hash).get();
 
         // this should never fail, but we'll check just in case
         require!(&tx.hash == poly_tx_hash, "Wrong poly transaction hash");
 
-        let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
-        let token_management_contract_address = self.get_token_management_contract_address();
+        let esdt_payment = self.payment_for_tx(poly_tx_hash).get();
+        let token_management_contract_address = self.token_management_contract_address().get();
 
-        self.set_tx_status(&tx.hash, TransactionStatus::InProgress);
+        self.tx_status(&tx.hash).set(&TransactionStatus::InProgress);
 
         let mut contract_call_raw = ContractCall::new(
             token_management_contract_address,
@@ -372,11 +372,11 @@ pub trait CrossChainManagement {
     }
 
     fn add_tx_payment_to_burn_list(&self, poly_tx_hash: &H256) {
-        if self.is_empty_payment_for_tx(poly_tx_hash) {
+        if self.payment_for_tx(poly_tx_hash).is_empty() {
             return;
         }
 
-        let esdt_payment = self.get_payment_for_tx(poly_tx_hash);
+        let esdt_payment = self.payment_for_tx(poly_tx_hash).get();
 
         let mut current_burn_amount = match self.burn_amounts().get(&esdt_payment.token_identifier)
         {
@@ -388,7 +388,7 @@ pub trait CrossChainManagement {
         self.burn_amounts()
             .insert(esdt_payment.token_identifier, current_burn_amount);
 
-        self.clear_payment_for_tx(poly_tx_hash);
+        self.payment_for_tx(poly_tx_hash).clear();
     }
 
     fn burn_esdt_token(
@@ -409,11 +409,11 @@ pub trait CrossChainManagement {
     }
 
     fn refund_payment_for_tx(&self, poly_tx_hash: &H256) {
-        if self.is_empty_payment_for_tx(poly_tx_hash) {
+        if self.payment_for_tx(poly_tx_hash).is_empty() {
             return;
         }
 
-        let payment = self.get_payment_for_tx(poly_tx_hash);
+        let payment = self.payment_for_tx(poly_tx_hash).get();
 
         self.send().direct_esdt_via_async_call(
             &payment.sender,
@@ -439,14 +439,14 @@ pub trait CrossChainManagement {
                     Some(_header) => {
                         // if this is not empty, it means processCrossChainTx was called more than once with the same tx
                         // so this should not be executed again
-                        if !self.is_empty_tx_by_hash(&tx.hash) {
+                        if !self.tx_by_hash(&tx.hash).is_empty() {
                             return;
                         }
 
                         // TODO: check tx proof
 
-                        self.set_tx_by_hash(&tx.hash, &tx);
-                        self.set_tx_status(&tx.hash, TransactionStatus::Pending);
+                        self.tx_by_hash(&tx.hash).set(&tx);
+                        self.tx_status(&tx.hash).set(&TransactionStatus::Pending);
 
                         // TODO: Add transactions to a list (or is fired event enough?)
                         // TODO: Decide how the tx hashes are linked to the Header
@@ -454,15 +454,12 @@ pub trait CrossChainManagement {
                         self.receive_tx_event(&tx);
 
                         if token_identifier.is_esdt() && amount > 0 {
-                            self.set_payment_for_tx(
-                                &tx.hash,
-                                &EsdtPayment {
-                                    sender: tx.from_contract_address,
-                                    receiver: tx.to_contract_address,
-                                    token_identifier,
-                                    amount,
-                                },
-                            );
+                            self.payment_for_tx(&tx.hash).set(&EsdtPayment {
+                                sender: tx.from_contract_address,
+                                receiver: tx.to_contract_address,
+                                token_identifier,
+                                amount,
+                            });
                         }
                     }
                     None => {
@@ -478,46 +475,31 @@ pub trait CrossChainManagement {
     // events
 
     // for tx from Elrond to another chain
-    #[event("0x1000000000000000000000000000000000000000000000000000000000000001")]
+    #[event("createTransaction")]
     fn create_tx_event(&self, tx: &Transaction);
 
     // for tx from another chain to Elrond
-    #[event("0x1000000000000000000000000000000000000000000000000000000000000002")]
+    #[event("receiveTransaction")]
     fn receive_tx_event(&self, tx: &Transaction);
 
     // header sync contract address
 
-    #[storage_get("headerSyncContractAddress")]
-    fn get_header_sync_contract_address(&self) -> Address;
-
-    #[storage_set("headerSyncContractAddress")]
-    fn set_header_sync_contract_address(&self, address: &Address);
+    #[storage_mapper("headerSyncContractAddress")]
+    fn header_sync_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 
     // Token management contract. Currently, this is the esdt contract
 
-    #[storage_get("tokenManagementContractAddress")]
-    fn get_token_management_contract_address(&self) -> Address;
-
-    #[storage_set("tokenManagementContractAddress")]
-    fn set_token_management_contract_address(&self, address: &Address);
-
-    #[storage_is_empty("tokenManagementContractAddress")]
-    fn is_empty_token_management_contract_address(&self) -> bool;
+    #[storage_mapper("tokenManagementContractAddress")]
+    fn token_management_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 
     // payment for a specific transaction - (token_identifier, amount) pair
 
     #[view(getPaymentForTx)]
-    #[storage_get("paymentForTx")]
-    fn get_payment_for_tx(&self, poly_tx_hash: &H256) -> EsdtPayment<BigUint>;
-
-    #[storage_set("paymentForTx")]
-    fn set_payment_for_tx(&self, poly_tx_hash: &H256, esdt_payment: &EsdtPayment<BigUint>);
-
-    #[storage_clear("paymentForTx")]
-    fn clear_payment_for_tx(&self, poly_tx_hash: &H256);
-
-    #[storage_is_empty("paymentForTx")]
-    fn is_empty_payment_for_tx(&self, poly_tx_hash: &H256) -> bool;
+    #[storage_mapper("paymentForTx")]
+    fn payment_for_tx(
+        &self,
+        poly_tx_hash: &H256,
+    ) -> SingleValueMapper<Self::Storage, EsdtPayment<BigUint>>;
 
     // burn amounts for tokens
     // To save gas, we only burn from time to time instead of burning for each successfully executed tx
@@ -528,31 +510,19 @@ pub trait CrossChainManagement {
     // own chain id
 
     #[view(getOwnChainId)]
-    #[storage_get("ownChainId")]
-    fn get_own_chain_id(&self) -> u64;
-
-    #[storage_set("ownChainId")]
-    fn set_own_chain_id(&self, own_chain_id: u64);
+    #[storage_mapper("ownChainId")]
+    fn own_chain_id(&self) -> SingleValueMapper<Self::Storage, u64>;
 
     // cross chain tx id
 
     #[view(getCrossChainTxId)]
-    #[storage_get("crossChainTxId")]
-    fn get_cross_chain_tx_id(&self, chain_id: u64) -> u64;
-
-    #[storage_set("crossChainTxId")]
-    fn set_cross_chain_tx_id(&self, chain_id: u64, tx_id: u64);
+    #[storage_mapper("crossChainTxId")]
+    fn cross_chain_tx_id(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u64>;
 
     // tx by hash
 
-    #[storage_get("txByHash")]
-    fn get_tx_by_hash(&self, poly_tx_hash: &H256) -> Transaction;
-
-    #[storage_set("txByHash")]
-    fn set_tx_by_hash(&self, poly_tx_hash: &H256, tx: &Transaction);
-
-    #[storage_is_empty("txByHash")]
-    fn is_empty_tx_by_hash(&self, poly_tx_hash: &H256) -> bool;
+    #[storage_mapper("txByHash")]
+    fn tx_by_hash(&self, poly_tx_hash: &H256) -> SingleValueMapper<Self::Storage, Transaction>;
 
     // list of hashes for pending tx from elrond to another chain
 
@@ -562,11 +532,9 @@ pub trait CrossChainManagement {
     // transaction status
 
     #[view(getTxStatus)]
-    #[storage_get("txStatus")]
-    fn get_tx_status(&self, poly_tx_hash: &H256) -> TransactionStatus;
-
-    #[storage_set("txStatus")]
-    fn set_tx_status(&self, poly_tx_hash: &H256, status: TransactionStatus);
+    #[storage_mapper("txStatus")]
+    fn tx_status(&self, poly_tx_hash: &H256)
+        -> SingleValueMapper<Self::Storage, TransactionStatus>;
 
     // Token whitelist
 

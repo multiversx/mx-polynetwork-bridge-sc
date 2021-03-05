@@ -39,7 +39,8 @@ pub enum EsdtOperation<BigUint: BigUintApi> {
 pub trait EsdtTokenManager {
     #[init]
     fn init(&self, cross_chain_management_address: Address) {
-        self.set_cross_chain_management_contract_address(&cross_chain_management_address);
+        self.cross_chain_management_contract_address()
+            .set(&cross_chain_management_address);
     }
 
     // endpoints - owner-only
@@ -54,7 +55,7 @@ pub trait EsdtTokenManager {
         only_owner!(self, "only owner may call this function");
 
         require!(
-            self.is_empty_wrapped_egld_token_identifier(),
+            self.wrapped_egld_token_identifier().is_empty(),
             "wrapped egld was already issued"
         );
         require!(
@@ -143,7 +144,7 @@ pub trait EsdtTokenManager {
         #[var_args] args: VarArgs<BoxedBytes>,
     ) -> SCResult<TransferEsdtActionResult<BigUint>> {
         require!(
-            self.get_caller() == self.get_cross_chain_management_contract_address(),
+            self.get_caller() == self.cross_chain_management_contract_address().get(),
             "Only the cross chain management contract may call this function"
         );
 
@@ -156,9 +157,10 @@ pub trait EsdtTokenManager {
 
         if self.is_smart_contract(&to) {
             // save the poly_tx_hash to be used in the callback
-            self.set_temporary_storage_poly_tx_hash(&self.get_tx_hash(), &poly_tx_hash);
+            self.temporary_storage_poly_tx_hash(&self.get_tx_hash())
+                .set(&poly_tx_hash);
 
-            if token_identifier != self.get_wrapped_egld_token_identifier() {
+            if token_identifier != self.wrapped_egld_token_identifier().get() {
                 Ok(TransferEsdtActionResult::AsyncCall(
                     self.async_transfer_esdt(
                         to,
@@ -177,7 +179,7 @@ pub trait EsdtTokenManager {
                 ))
             }
         } else {
-            if token_identifier != self.get_wrapped_egld_token_identifier() {
+            if token_identifier != self.wrapped_egld_token_identifier().get() {
                 self.subtract_total_wrapped(&token_identifier, &amount);
 
                 self.send().direct_esdt_via_transf_exec(
@@ -206,11 +208,11 @@ pub trait EsdtTokenManager {
     fn wrap_egld(&self, #[payment] payment: BigUint) -> SCResult<SendEsdt<BigUint>> {
         require!(payment > 0, "Payment must be more than 0");
         require!(
-            !self.is_empty_wrapped_egld_token_identifier(),
+            !self.wrapped_egld_token_identifier().is_empty(),
             "Wrapped eGLD was not issued yet"
         );
 
-        let wrapped_egld_token_identifier = self.get_wrapped_egld_token_identifier();
+        let wrapped_egld_token_identifier = self.wrapped_egld_token_identifier().get();
         let wrapped_egld_left = self.get_total_wrapped_remaining(&wrapped_egld_token_identifier);
 
         require!(
@@ -236,12 +238,12 @@ pub trait EsdtTokenManager {
         #[payment_token] token_identifier: TokenIdentifier,
     ) -> SCResult<SendEgld<BigUint>> {
         require!(
-            !self.is_empty_wrapped_egld_token_identifier(),
+            !self.wrapped_egld_token_identifier().is_empty(),
             "Wrapped eGLD was not issued yet"
         );
         require!(token_identifier.is_esdt(), "Only ESDT tokens accepted");
 
-        let wrapped_egld_token_identifier = self.get_wrapped_egld_token_identifier();
+        let wrapped_egld_token_identifier = self.wrapped_egld_token_identifier().get();
 
         require!(
             token_identifier == wrapped_egld_token_identifier,
@@ -325,7 +327,7 @@ pub trait EsdtTokenManager {
         tx_status: TransactionStatus,
     ) -> TransferEgldExecute<BigUint> {
         let mut contract_call_raw = ContractCall::new(
-            self.get_cross_chain_management_contract_address(),
+            self.cross_chain_management_contract_address().get(),
             TokenIdentifier::egld(),
             BigUint::zero(),
             BoxedBytes::from(COMPLETE_TX_ENDPOINT_NAME),
@@ -394,7 +396,8 @@ pub trait EsdtTokenManager {
         contract_call_raw.push_argument_raw_bytes(&b"true"[..]);
 
         // save data for callback
-        self.set_temporary_storage_esdt_operation(&self.get_tx_hash(), &EsdtOperation::Issue);
+        self.temporary_storage_esdt_operation(&self.get_tx_hash())
+            .set(&EsdtOperation::Issue);
 
         contract_call_raw.async_call()
     }
@@ -414,10 +417,11 @@ pub trait EsdtTokenManager {
         contract_call_raw.push_argument_raw_bytes(&amount.to_bytes_be());
 
         // save data for callback
-        self.set_temporary_storage_esdt_operation(
-            &self.get_tx_hash(),
-            &EsdtOperation::Mint(token_identifier.clone(), amount.clone()),
-        );
+        self.temporary_storage_esdt_operation(&self.get_tx_hash())
+            .set(&EsdtOperation::Mint(
+                token_identifier.clone(),
+                amount.clone(),
+            ));
 
         contract_call_raw.async_call()
     }
@@ -437,10 +441,11 @@ pub trait EsdtTokenManager {
         contract_call_raw.push_argument_raw_bytes(&amount.to_bytes_be());
 
         // save data for callback
-        self.set_temporary_storage_esdt_operation(
-            &self.get_tx_hash(),
-            &EsdtOperation::Burn(token_identifier.clone(), amount.clone()),
-        );
+        self.temporary_storage_esdt_operation(&self.get_tx_hash())
+            .set(&EsdtOperation::Burn(
+                token_identifier.clone(),
+                amount.clone(),
+            ));
 
         contract_call_raw.async_call()
     }
@@ -459,8 +464,13 @@ pub trait EsdtTokenManager {
         let original_tx_hash = self.get_tx_hash();
 
         // if this is empty, it means this callBack comes from an issue ESDT call
-        if self.is_empty_temporary_storage_poly_tx_hash(&original_tx_hash) {
-            let esdt_operation = self.get_temporary_storage_esdt_operation(&original_tx_hash);
+        if self
+            .temporary_storage_poly_tx_hash(&original_tx_hash)
+            .is_empty()
+        {
+            let esdt_operation = self
+                .temporary_storage_esdt_operation(&original_tx_hash)
+                .get();
             match esdt_operation {
                 // if this is also empty, then there is nothing to do in the callback
                 EsdtOperation::None => {}
@@ -473,7 +483,8 @@ pub trait EsdtTokenManager {
                 }
             };
 
-            self.clear_temporary_storage_esdt_operation(&original_tx_hash);
+            self.temporary_storage_esdt_operation(&original_tx_hash)
+                .clear();
 
             OptionalResult::None
         } else {
@@ -486,8 +497,9 @@ pub trait EsdtTokenManager {
         success: bool,
         original_tx_hash: &H256,
     ) -> TransferEgldExecute<BigUint> {
-        let poly_tx_hash = self.get_temporary_storage_poly_tx_hash(&original_tx_hash);
-        self.clear_temporary_storage_poly_tx_hash(&original_tx_hash);
+        let poly_tx_hash = self.temporary_storage_poly_tx_hash(&original_tx_hash).get();
+        self.temporary_storage_poly_tx_hash(&original_tx_hash)
+            .clear();
 
         if success {
             self.complete_tx(&poly_tx_hash, TransactionStatus::Executed)
@@ -504,11 +516,11 @@ pub trait EsdtTokenManager {
 
         if success {
             self.set_total_wrapped_remaining(&token_identifier, &initial_supply);
-            self.set_last_issued_token_identifier(&token_identifier);
+            self.last_issued_token_identifier().set(&token_identifier);
 
             // if this is empty, then this is the very first issue, which would be the wrapped eGLD token
-            if self.is_empty_wrapped_egld_token_identifier() {
-                self.set_wrapped_egld_token_identifier(&token_identifier);
+            if self.wrapped_egld_token_identifier().is_empty() {
+                self.wrapped_egld_token_identifier().set(&token_identifier);
             }
         }
 
@@ -543,17 +555,9 @@ pub trait EsdtTokenManager {
 
     // 1 eGLD = 1 wrapped eGLD, and they are interchangeable through this contract
 
-    // TODO: Use improved SingleValueMapper in next elrond-wasm version if possible
-
     #[view(getWrappedEgldTokenIdentifier)]
-    #[storage_get("wrappedEgldTokenIdentifier")]
-    fn get_wrapped_egld_token_identifier(&self) -> TokenIdentifier;
-
-    #[storage_set("wrappedEgldTokenIdentifier")]
-    fn set_wrapped_egld_token_identifier(&self, token_identifier: &TokenIdentifier);
-
-    #[storage_is_empty("wrappedEgldTokenIdentifier")]
-    fn is_empty_wrapped_egld_token_identifier(&self) -> bool;
+    #[storage_mapper("wrappedEgldTokenIdentifier")]
+    fn wrapped_egld_token_identifier(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
     // The total remaining wrapped tokens of each type owned by this SC.
     // Stored so we don't have to query everytime.
@@ -564,19 +568,13 @@ pub trait EsdtTokenManager {
     // Used to be able to issue, get the identifier, and then add it to whitelist in the other contracts
 
     #[view(getLastIssuedTokenIdentifier)]
-    #[storage_get("lastIssuedTokenIdentifier")]
-    fn get_last_issued_token_identifier(&self) -> TokenIdentifier;
-
-    #[storage_set("lastIssuedTokenIdentifier")]
-    fn set_last_issued_token_identifier(&self, token_identifier: &TokenIdentifier);
+    #[storage_mapper("lastIssuedTokenIdentifier")]
+    fn last_issued_token_identifier(&self) -> SingleValueMapper<Self::Storage, TokenIdentifier>;
 
     // cross chain management
 
-    #[storage_get("crossChainManagementContractAddress")]
-    fn get_cross_chain_management_contract_address(&self) -> Address;
-
-    #[storage_set("crossChainManagementContractAddress")]
-    fn set_cross_chain_management_contract_address(&self, address: &Address);
+    #[storage_mapper("crossChainManagementContractAddress")]
+    fn cross_chain_management_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 
     // ---------- Temporary storage for raw callbacks ----------
 
@@ -584,36 +582,17 @@ pub trait EsdtTokenManager {
     // original_tx_hash is what you get when you call self.get_tx_hash() in the api
     // poly_tx_hash is the hash of the poly transaction
 
-    #[storage_get("temporaryStoragePolyTxHash")]
-    fn get_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256) -> H256;
-
-    #[storage_set("temporaryStoragePolyTxHash")]
-    fn set_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256, poly_tx_hash: &H256);
-
-    #[storage_clear("temporaryStoragePolyTxHash")]
-    fn clear_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256);
-
-    #[storage_is_empty("temporaryStoragePolyTxHash")]
-    fn is_empty_temporary_storage_poly_tx_hash(&self, original_tx_hash: &H256) -> bool;
+    #[storage_mapper("temporaryStoragePolyTxHash")]
+    fn temporary_storage_poly_tx_hash(
+        &self,
+        original_tx_hash: &H256,
+    ) -> SingleValueMapper<Self::Storage, H256>;
 
     // temporary storage for ESDT operations. Used in callback.
 
-    #[storage_get("temporaryStorageEsdtOperation")]
-    fn get_temporary_storage_esdt_operation(
+    #[storage_mapper("temporaryStorageEsdtOperation")]
+    fn temporary_storage_esdt_operation(
         &self,
         original_tx_hash: &H256,
-    ) -> EsdtOperation<BigUint>;
-
-    #[storage_set("temporaryStorageEsdtOperation")]
-    fn set_temporary_storage_esdt_operation(
-        &self,
-        original_tx_hash: &H256,
-        esdt_operation: &EsdtOperation<BigUint>,
-    );
-
-    #[storage_clear("temporaryStorageEsdtOperation")]
-    fn clear_temporary_storage_esdt_operation(&self, original_tx_hash: &H256);
-
-    #[storage_is_empty("temporaryStorageEsdtOperation")]
-    fn is_empty_temporary_storage_esdt_operation(&self, original_tx_hash: &H256) -> bool;
+    ) -> SingleValueMapper<Self::Storage, EsdtOperation<BigUint>>;
 }
