@@ -1,5 +1,5 @@
 use elrond_wasm::io::EndpointResult;
-use elrond_wasm::types::{AsyncCall, SendEgld, SendEsdt};
+use elrond_wasm::types::AsyncCall;
 use elrond_wasm::{
     api::{BigUintApi, EndpointFinishApi, ErrorApi, SendApi},
     types::TransferEgldExecute,
@@ -10,8 +10,6 @@ elrond_wasm::derive_imports!();
 #[derive(TypeAbi)]
 pub enum TransferEsdtActionResult<BigUint: BigUintApi> {
     Nothing,
-    SendEgld(SendEgld<BigUint>),
-    SendEsdt(SendEsdt<BigUint>),
     TransferEgldExecute(TransferEgldExecute<BigUint>),
     AsyncCall(AsyncCall<BigUint>),
 }
@@ -24,8 +22,6 @@ where
     fn finish(&self, api: FA) {
         match self {
             TransferEsdtActionResult::Nothing => (),
-            TransferEsdtActionResult::SendEgld(send_egld) => send_egld.finish(api),
-            TransferEsdtActionResult::SendEsdt(send_esdt) => send_esdt.finish(api),
             TransferEsdtActionResult::TransferEgldExecute(transfer_egld_execute) => {
                 transfer_egld_execute.finish(api)
             }

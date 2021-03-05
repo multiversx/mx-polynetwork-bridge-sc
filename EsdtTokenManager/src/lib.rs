@@ -149,48 +149,53 @@ pub trait EsdtTokenManager {
 
         let total_wrapped = self.get_total_wrapped_remaining(&token_identifier);
         if total_wrapped < amount {
-            Ok(TransferEsdtActionResult::TransferEgldExecute(
+            return Ok(TransferEsdtActionResult::TransferEgldExecute(
                 self.complete_tx(&poly_tx_hash, TransactionStatus::OutOfFunds),
-            ))
-        } else {
-            if self.is_smart_contract(&to) && !func_name.is_empty() {
-                // save the poly_tx_hash to be used in the callback
-                self.set_temporary_storage_poly_tx_hash(&self.get_tx_hash(), &poly_tx_hash);
+            ));
+        }
 
-                if token_identifier != self.get_wrapped_egld_token_identifier() {
-                    Ok(TransferEsdtActionResult::AsyncCall(
-                        self.async_transfer_esdt(
-                            to,
-                            token_identifier,
-                            amount,
-                            func_name,
-                            args.as_slice(),
-                        ),
-                    ))
-                } else {
-                    // automatically unwrap before sending if the token is wrapped eGLD
-                    self.add_total_wrapped(&token_identifier, &amount);
+        if self.is_smart_contract(&to) {
+            // save the poly_tx_hash to be used in the callback
+            self.set_temporary_storage_poly_tx_hash(&self.get_tx_hash(), &poly_tx_hash);
 
-                    Ok(TransferEsdtActionResult::AsyncCall(
-                        self.async_transfer_egld(to, amount, func_name, args.as_slice()),
-                    ))
-                }
+            if token_identifier != self.get_wrapped_egld_token_identifier() {
+                Ok(TransferEsdtActionResult::AsyncCall(
+                    self.async_transfer_esdt(
+                        to,
+                        token_identifier,
+                        amount,
+                        func_name,
+                        args.as_slice(),
+                    ),
+                ))
             } else {
-                if token_identifier != self.get_wrapped_egld_token_identifier() {
-                    Ok(TransferEsdtActionResult::SendEsdt(SendEsdt {
-                        to,
-                        token_name: token_identifier.into_boxed_bytes(),
-                        amount,
-                        data: BoxedBytes::empty(),
-                    }))
-                } else {
-                    Ok(TransferEsdtActionResult::SendEgld(SendEgld {
-                        to,
-                        amount,
-                        data: BoxedBytes::empty(),
-                    }))
-                }
+                // automatically unwrap before sending if the token is wrapped eGLD
+                self.add_total_wrapped(&token_identifier, &amount);
+
+                Ok(TransferEsdtActionResult::AsyncCall(
+                    self.async_transfer_egld(to, amount, func_name, args.as_slice()),
+                ))
             }
+        } else {
+            if token_identifier != self.get_wrapped_egld_token_identifier() {
+                self.subtract_total_wrapped(&token_identifier, &amount);
+
+                self.send().direct_esdt_via_transf_exec(
+                    &to,
+                    token_identifier.as_slice(),
+                    &amount,
+                    &[],
+                );
+            } else {
+                // automatically unwrap before sending if the token is wrapped eGLD
+                self.add_total_wrapped(&token_identifier, &amount);
+
+                self.send().direct_egld(&to, &amount, &[]);
+            }
+
+            Ok(TransferEsdtActionResult::TransferEgldExecute(
+                self.complete_tx(&poly_tx_hash, TransactionStatus::Executed),
+            ))
         }
     }
 
