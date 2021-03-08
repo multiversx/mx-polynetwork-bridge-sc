@@ -1,0 +1,58 @@
+{
+    "name": "mint wrapped ETH",
+    "steps": [
+        {
+            "step": "externalSteps",
+            "path": "issue_wrapped_eth.scen.json"
+        },
+        {
+            "step": "scCall",
+            "txId": "wrapped-eth-mint",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:esdt_token_manager_contract",
+                "value": "0",
+                "function": "mintEsdtToken",
+                "arguments": [
+                    "str:WETH-123456",
+                    "1,000"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "4",
+                    "balance": "0",
+                    "storage": {}
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "1,000",
+                        "str:WETH-123456": "2,000"
+                    },
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract",
+                        "str:wrappedEgldTokenIdentifier": "str:WEGLD-123456",
+                        "str:lastIssuedTokenIdentifier": "str:WETH-123456",
+                        "str:totalWrappedRemaining.mapped|str:WEGLD-123456": "1,000",
+                        "str:totalWrappedRemaining.mapped|str:WETH-123456": "2,000"
+                    },
+                    "code": "file:../output/esdt-token-manager.wasm"
+                }
+            }
+        }
+    ]
+}

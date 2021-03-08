@@ -6,8 +6,8 @@ use esdt_payment::*;
 
 extern crate hex;
 
-use elrond_wasm::{elrond_codec::*, BigUintApi};
-use elrond_wasm_debug::RustBigUint;
+use elrond_wasm::{elrond_codec::*, api::BigUintApi};
+use elrond_wasm_debug::api::RustBigUint;
 
 // Run with: cargo test -- --nocapture deserialize_transaction
 #[test]

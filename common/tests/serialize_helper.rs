@@ -3,7 +3,8 @@ use transaction::*;
 
 extern crate hex;
 
-use elrond_wasm::{elrond_codec::*, Address, BoxedBytes, H256};
+use elrond_wasm::types::{Address, BoxedBytes, H256};
+use elrond_wasm::elrond_codec::*;
 use std::convert::TryInto;
 
 // Run with: cargo test -- --nocapture serialize_transaction
@@ -16,29 +17,27 @@ fn serialize_transaction() {
         .try_into()
         .unwrap();
 
-    let hash_as_hex = "25a4fa887af0bb300e21a4bf8c6a7101a17c2039af36ae9b33b32ee962e64039";
-    let hash_as_array: [u8; 32] = hex::decode(hash_as_hex)
-        .expect("error decoding hash")
+    let bob_addr_hex = "8049d639e5a6980d1cd2392abcce41029cda74a1563523a202f09641cc2618f8";
+    let bob_addr_array: [u8; 32] = hex::decode(bob_addr_hex)
+        .expect("error decoding bob address")
         .as_slice()
         .try_into()
         .unwrap();
 
     let transaction = Transaction {
-        hash: H256::from(hash_as_array),
+        hash: H256::zero(),
         id: 0,
-        from_contract_address: Address::zero(),
-        to_chain_id: 0x2A,
-        to_contract_address: Address::from(alice_addr_array),
+        from_contract_address: Address::from(alice_addr_array),
+        to_chain_id: 0x0A,
+        to_contract_address: Address::from(bob_addr_array),
         method_name: BoxedBytes::empty(),
         method_args: Vec::new(),
     };
 
-    let mut serialized = Vec::new();
-    match transaction.dep_encode(&mut serialized) {
-        Ok(()) => {}
-        Err(_) => panic!("serialize error"),
-    };
-
+    let serialized = transaction.get_partial_serialized();
     let serialized_as_hex = hex::encode(serialized.as_slice());
+
     println!("Serialized: {}", serialized_as_hex);
+
+    // To Also get the hash, go here and input as hex: https://emn178.github.io/online-tools/sha256.html
 }

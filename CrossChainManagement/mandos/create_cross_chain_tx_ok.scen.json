@@ -1,0 +1,81 @@
+{
+    "name": "create cross chain tx",
+    "steps": [
+        {
+            "step": "externalSteps",
+            "path": "deploy.scen.json"
+        },
+        {
+            "step": "setState",
+            "comment": "Alice's address",
+            "accounts": {
+                "0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "1,000"
+                    },
+                    "storage": {}
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "create-cross-chain-tx-ok",
+            "tx": {
+                "from": "0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1",
+                "to": "address:cross_chain_management_contract",
+                "value": "0",
+                "esdtTokenName": "str:WEGLD-123456",
+                "esdtValue": "400",
+                "function": "createCrossChainTx",
+                "arguments": [
+                    "10",
+                    "0x8049d639e5a6980d1cd2392abcce41029cda74a1563523a202f09641cc2618f8",
+                    "",
+                    ""
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "3",
+                    "balance": "0",
+                    "storage": {}
+                },
+                "0x0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1": {
+                    "nonce": "1",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "600"
+                    },
+                    "storage": {}
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:tokenManagementContractAddress": "address:esdt_token_manager_contract",
+                        "str:ownChainId": "42",
+                        "str:crossChainTxId|u64:10": "1",
+                        "str:tokenWhitelist.value|u32:1": "str:WEGLD-123456",
+                        "str:txByHash|0x923fd2dbb324fce554383087f5826adc600f1a86beea67883a55c7147c53dc00": "0x923fd2dbb324fce554383087f5826adc600f1a86beea67883a55c7147c53dc0000000000000000000139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10a000000000000008049d639e5a6980d1cd2392abcce41029cda74a1563523a202f09641cc2618f80000"
+                    },
+                    "code": "file:../output/cross-chain-management.wasm"
+                }
+            }
+        }
+    ]
+}

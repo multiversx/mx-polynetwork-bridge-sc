@@ -1,0 +1,71 @@
+{
+    "name": "wrap eGLD",
+    "steps": [
+        {
+            "step": "externalSteps",
+            "path": "issue_wrapped_egld.scen.json"
+        },
+        {
+            "step": "setState",
+            "accounts": {
+                "address:user": {
+                    "nonce": "0",
+                    "balance": "1,000",
+                    "storage": {}
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "wrap-egld",
+            "tx": {
+                "from": "address:user",
+                "to": "address:esdt_token_manager_contract",
+                "value": "400",
+                "function": "wrapEgld",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "2",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                },
+                "address:user": {
+                    "nonce": "1",
+                    "balance": "600",
+                    "esdt": {
+                        "str:WEGLD-123456": "400"
+                    },
+                    "storage": {}
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "400",
+                    "esdt": {
+                        "str:WEGLD-123456": "600"
+                    },
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract",
+                        "str:wrappedEgldTokenIdentifier": "str:WEGLD-123456",
+                        "str:lastIssuedTokenIdentifier": "str:WEGLD-123456",
+                        "str:totalWrappedRemaining.mapped|str:WEGLD-123456": "600"
+                    },
+                    "code": "file:../output/esdt-token-manager.wasm"
+                }
+            }
+        }
+    ]
+}

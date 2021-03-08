@@ -32,9 +32,9 @@ fn contract_map() -> ContractMap<TxContext> {
 }
 
 #[test]
-fn deploy() {
+fn setup() {
 	parse_execute_mandos(
-		"mandos/deploy.scen.json",
+		"mandos/setup.scen.json",
 		&contract_map(),
 	);
 }

@@ -1,0 +1,410 @@
+{
+    "name": "deploy",
+    "steps": [
+        {
+            "step": "setState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "0",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                }
+            },
+            "newAddresses": [
+                {
+                    "creatorAddress": "address:owner",
+                    "creatorNonce": "0",
+                    "newAddress": "address:block_header_sync_contract"
+                },
+                {
+                    "creatorAddress": "address:owner",
+                    "creatorNonce": "1",
+                    "newAddress": "address:cross_chain_management_contract"
+                },
+                {
+                    "creatorAddress": "address:owner",
+                    "creatorNonce": "2",
+                    "newAddress": "address:esdt_token_manager_contract"
+                }
+            ]
+        },
+        {
+            "step": "scDeploy",
+            "txId": "deploy-block-header-sync",
+            "tx": {
+                "from": "address:owner",
+                "contractCode": "file:../BlockHeaderSync/output/block-header-sync.wasm",
+                "value": "0",
+                "arguments": [],
+                "gasLimit": "1,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "1",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                }
+            }
+        },
+        {
+            "step": "scDeploy",
+            "txId": "deploy-cross-chain-management",
+            "tx": {
+                "from": "address:owner",
+                "contractCode": "file:../CrossChainManagement/output/cross-chain-management.wasm",
+                "value": "0",
+                "arguments": [
+                    "address:block_header_sync_contract",
+                    "42"
+                ],
+                "gasLimit": "1,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "2",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:ownChainId": "42"
+                    },
+                    "code": "file:../CrossChainManagement/output/cross-chain-management.wasm"
+                }
+            }
+        },
+        {
+            "step": "scDeploy",
+            "txId": "deploy-esdt-token-manager",
+            "tx": {
+                "from": "address:owner",
+                "contractCode": "file:../EsdtTokenManager/output/esdt-token-manager.wasm",
+                "value": "0",
+                "arguments": [
+                    "address:cross_chain_management_contract"
+                ],
+                "gasLimit": "1,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "3",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:ownChainId": "42"
+                    },
+                    "code": "file:../CrossChainManagement/output/cross-chain-management.wasm"
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract"
+                    },
+                    "code": "file:../EsdtTokenManager/output/esdt-token-manager.wasm"
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "setTokenManagementContractAddress",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:cross_chain_management_contract",
+                "value": "0",
+                "function": "setTokenManagementContractAddress",
+                "arguments": [
+                    "address:esdt_token_manager_contract"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "4",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:tokenManagementContractAddress": "address:esdt_token_manager_contract",
+                        "str:ownChainId": "42"
+                    },
+                    "code": "file:../CrossChainManagement/output/cross-chain-management.wasm"
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract"
+                    },
+                    "code": "file:../EsdtTokenManager/output/esdt-token-manager.wasm"
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "wrapped-egld-issue",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:esdt_token_manager_contract",
+                "value": "5000000000000000000",
+                "function": "performWrappedEgldIssue",
+                "arguments": [
+                    "1,000"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "5",
+                    "balance": "0",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:tokenManagementContractAddress": "address:esdt_token_manager_contract",
+                        "str:ownChainId": "42"
+                    },
+                    "code": "file:../CrossChainManagement/output/cross-chain-management.wasm"
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "1,000"
+                    },
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract",
+                        "str:wrappedEgldTokenIdentifier": "str:WEGLD-123456",
+                        "str:lastIssuedTokenIdentifier": "str:WEGLD-123456",
+                        "str:totalWrappedRemaining.mapped|str:WEGLD-123456": "1,000"
+                    },
+                    "code": "file:../EsdtTokenManager/output/esdt-token-manager.wasm"
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "add-wrapped-egld-to-whitelist",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:cross_chain_management_contract",
+                "value": "0",
+                "function": "addTokenToWhitelist",
+                "arguments": [
+                    "str:WEGLD-123456"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "6",
+                    "balance": "0",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:tokenManagementContractAddress": "address:esdt_token_manager_contract",
+                        "str:ownChainId": "42",
+                        "tokenWhitelist.value|u32:1": "str:WEGLD-123456"
+                    },
+                    "code": "file:../CrossChainManagement/output/cross-chain-management.wasm"
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "1,000"
+                    },
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract",
+                        "str:wrappedEgldTokenIdentifier": "str:WEGLD-123456",
+                        "str:lastIssuedTokenIdentifier": "str:WEGLD-123456",
+                        "str:totalWrappedRemaining.mapped|str:WEGLD-123456": "1,000"
+                    },
+                    "code": "file:../EsdtTokenManager/output/esdt-token-manager.wasm"
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "sync-genesis-header",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:block_header_sync_contract",
+                "value": "0",
+                "function": "syncGenesisHeader",
+                "arguments": [
+                    "0x00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "comment": "TODO: Set BlockHeaderSync SC storage to '*', since it's mostly a mock, we don't care what is stored there",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "7",
+                    "balance": "0",
+                    "storage": {}
+                },
+                "address:block_header_sync_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {},
+                    "code": "file:../BlockHeaderSync/output/block-header-sync.wasm"
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:tokenManagementContractAddress": "address:esdt_token_manager_contract",
+                        "str:ownChainId": "42",
+                        "tokenWhitelist.value|u32:1": "str:WEGLD-123456"
+                    },
+                    "code": "file:../CrossChainManagement/output/cross-chain-management.wasm"
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "1,000"
+                    },
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract",
+                        "str:wrappedEgldTokenIdentifier": "str:WEGLD-123456",
+                        "str:lastIssuedTokenIdentifier": "str:WEGLD-123456",
+                        "str:totalWrappedRemaining.mapped|str:WEGLD-123456": "1,000"
+                    },
+                    "code": "file:../EsdtTokenManager/output/esdt-token-manager.wasm"
+                }
+            }
+        }
+    ]
+}

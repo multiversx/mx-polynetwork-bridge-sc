@@ -5,7 +5,8 @@ use peer_config::*;
 use chain_config::*;
 use vbft_block_info::*;
 
-use elrond_wasm::{Address, BoxedBytes, H256, Vec, elrond_codec::*};
+use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
+use elrond_wasm::elrond_codec::*;
 
 #[test]
 fn peer_config_serde_test() {

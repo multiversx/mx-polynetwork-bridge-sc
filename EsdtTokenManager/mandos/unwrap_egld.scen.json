@@ -1,0 +1,63 @@
+{
+    "name": "unwrap eGLD",
+    "steps": [
+        {
+            "name": "externalSteps",
+            "path": "wrap_egld.scen.json"
+        },
+        {
+            "step": "scCall",
+            "txId": "unwrap-egld",
+            "tx": {
+                "from": "address:user",
+                "to": "address:esdt_token_manager_contract",
+                "value": "0",
+                "esdtTokenName": "str:WEGLD-123456",
+                "esdtValue": "200",
+                "function": "unwrapEgld",
+                "arguments": [],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "2",
+                    "balance": "5000000000000000000",
+                    "storage": {}
+                },
+                "address:user": {
+                    "nonce": "2",
+                    "balance": "800",
+                    "esdt": {
+                        "str:WEGLD-123456": "200"
+                    },
+                    "storage": {}
+                },
+                "address:esdt_token_manager_contract": {
+                    "nonce": "0",
+                    "balance": "200",
+                    "esdt": {
+                        "str:WEGLD-123456": "800"
+                    },
+                    "storage": {
+                        "str:crossChainManagementContractAddress": "address:cross_chain_management_contract",
+                        "str:wrappedEgldTokenIdentifier": "str:WEGLD-123456",
+                        "str:lastIssuedTokenIdentifier": "str:WEGLD-123456",
+                        "str:totalWrappedRemaining.mapped|str:WEGLD-123456": "800"
+                    },
+                    "code": "file:../output/esdt-token-manager.wasm"
+                }
+            }
+        }
+    ]
+}

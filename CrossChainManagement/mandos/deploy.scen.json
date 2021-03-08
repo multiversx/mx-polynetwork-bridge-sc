@@ -1,0 +1,101 @@
+{
+    "name": "deploy",
+    "steps": [
+        {
+            "step": "setState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {}
+                }
+            }
+        },
+        {
+            "step": "scDeploy",
+            "txId": "deploy-cross-chain-management",
+            "tx": {
+                "from": "address:owner",
+                "contractCode": "file:../output/cross-chain-management.wasm",
+                "value": "0",
+                "arguments": [
+                    "address:block_header_sync_contract",
+                    "42"
+                ],
+                "gasLimit": "1,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "setTokenManagementContractAddress",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:cross_chain_management_contract",
+                "value": "0",
+                "function": "setTokenManagementContractAddress",
+                "arguments": [
+                    "address:esdt_token_manager_contract"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "add-wrapped-egld-to-whitelist",
+            "tx": {
+                "from": "address:owner",
+                "to": "address:cross_chain_management_contract",
+                "value": "0",
+                "function": "addTokenToWhitelist",
+                "arguments": [
+                    "str:WEGLD-123456"
+                ],
+                "gasLimit": "100,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*",
+                "logs": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "3",
+                    "balance": "0",
+                    "storage": {}
+                },
+                "address:cross_chain_management_contract": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:headerSyncContractAddress": "address:block_header_sync_contract",
+                        "str:tokenManagementContractAddress": "address:esdt_token_manager_contract",
+                        "str:ownChainId": "42",
+                        "tokenWhitelist.value|u32:1": "str:WEGLD-123456"
+                    },
+                    "code": "file:../output/cross-chain-management.wasm"
+                }
+            }
+        }
+    ]
+}
