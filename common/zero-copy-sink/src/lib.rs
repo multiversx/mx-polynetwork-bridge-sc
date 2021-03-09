@@ -92,8 +92,4 @@ impl ZeroCopySink {
     pub fn write_public_key(&mut self, key: &PublicKey) {
         self.write_bytes(key.as_slice());
     }
-
-    pub fn write_signature(&mut self, sig: &Signature) {
-        self.write_bytes(sig.as_slice());
-    }
 }

@@ -20,6 +20,9 @@ path = "transaction"
 [dependencies.esdt-payment]
 path = "esdt-payment"
 
+[dependencies.signature]
+path = "signature"
+
 [dependencies.util]
 path = "util"
 

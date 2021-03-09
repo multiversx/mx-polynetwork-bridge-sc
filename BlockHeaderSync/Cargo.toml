@@ -27,6 +27,10 @@ version = "0.13.0"
 version = "0.0.0"
 path = "../common/header"
 
+[dependencies.signature]
+version = "0.0.0"
+path = "../common/signature"
+
 [dependencies.util]
 version = "0.0.0"
 path = "../common/util"

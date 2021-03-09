@@ -5,6 +5,8 @@ use header::*;
 
 use util::*;
 
+use signature::*;
+
 elrond_wasm::imports!();
 
 #[elrond_wasm_derive::contract(BlockHeaderSyncImpl)]

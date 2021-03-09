@@ -222,11 +222,4 @@ impl ZeroCopySource {
             None => None
         }
     }
-
-    pub fn next_signature(&mut self) -> Option<Signature> {
-        match self.next_bytes(POLYCHAIN_SIGNATURE_LEN) {
-            Some(sig) => Some(Signature::from(sig.as_slice())),
-            None => None
-        }
-    }
 }
