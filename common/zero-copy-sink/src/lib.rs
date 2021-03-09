@@ -2,7 +2,6 @@
 
 use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
-use util::*;
 
 pub struct ZeroCopySink {
     sink: Vec<u8>
@@ -87,9 +86,5 @@ impl ZeroCopySink {
 
     pub fn write_hash(&mut self, hash: &H256) {
         self.write_bytes(hash.as_bytes());
-    }
-
-    pub fn write_public_key(&mut self, key: &PublicKey) {
-        self.write_bytes(key.as_slice());
     }
 }

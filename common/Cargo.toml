@@ -23,6 +23,9 @@ path = "esdt-payment"
 [dependencies.signature]
 path = "signature"
 
+[dependencies.public-key]
+path = "public-key"
+
 [dependencies.util]
 path = "util"
 

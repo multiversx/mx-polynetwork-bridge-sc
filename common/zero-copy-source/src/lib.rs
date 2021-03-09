@@ -3,8 +3,6 @@
 use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
 
-use util::*;
-
 #[derive(Clone)]
 pub struct ZeroCopySource {
     source: Vec<u8>,
@@ -212,13 +210,6 @@ impl ZeroCopySource {
     pub fn next_hash(&mut self) -> Option<H256> {
         match self.next_bytes(H256::len_bytes()) {
             Some(hash_bytes) => Some(H256::from_slice(hash_bytes.as_slice())),
-            None => None
-        }
-    }
-
-    pub fn next_public_key(&mut self) -> Option<PublicKey> {
-        match self.next_bytes(POLYCHAIN_PUBKEY_LEN) {
-            Some(key) => Some(PublicKey::from(key.as_slice())),
             None => None
         }
     }

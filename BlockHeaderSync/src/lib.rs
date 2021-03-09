@@ -6,6 +6,7 @@ use header::*;
 use util::*;
 
 use signature::*;
+use public_key::*;
 
 elrond_wasm::imports!();
 
@@ -96,7 +97,9 @@ pub trait BlockHeaderSync {
         }
 
         for bk in &header.book_keepers {
-            let key_id = hex_converter::byte_slice_to_hex(bk.as_slice());
+            let mut serialized_key = Vec::new(); 
+            let _ = bk.dep_encode(&mut serialized_key);
+            let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
 
             // if key doesn't exist, something is wrong
             if !prev_consensus.iter().any(|p| p.id == key_id) {

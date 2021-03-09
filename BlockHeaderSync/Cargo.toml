@@ -31,6 +31,10 @@ path = "../common/header"
 version = "0.0.0"
 path = "../common/signature"
 
+[dependencies.public-key]
+version = "0.0.0"
+path = "../common/public-key"
+
 [dependencies.util]
 version = "0.0.0"
 path = "../common/util"
