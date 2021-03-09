@@ -5,8 +5,8 @@ use header::*;
 
 use util::*;
 
-use signature::*;
 use public_key::*;
+use signature::*;
 
 elrond_wasm::imports!();
 
@@ -97,7 +97,7 @@ pub trait BlockHeaderSync {
         }
 
         for bk in &header.book_keepers {
-            let mut serialized_key = Vec::new(); 
+            let mut serialized_key = Vec::new();
             let _ = bk.dep_encode(&mut serialized_key);
             let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
 
@@ -176,9 +176,43 @@ pub trait BlockHeaderSync {
         }
     }
 
-    // TO DO: verify function not yet available in API
-    fn verify(&self, _data: &BoxedBytes, _key: &PublicKey, _sig: &Signature) -> bool {
-        true
+    fn verify(&self, public_key: &PublicKey, data: &BoxedBytes, signature: &Signature) -> bool {
+        if data.is_empty() {
+            return false;
+        }
+
+        match public_key.algorithm {
+            EllipticCurveAlgorithm::ECDSA => {
+                match signature.scheme {
+                    SignatureScheme::SM3withSM2 => {
+                        // not implemented for DSA signature yet
+
+                        self.verify_secp256k1(
+                            public_key.value_as_slice(),
+                            data.as_slice(),
+                            signature.value_as_slice(),
+                        )
+                    }
+                    SignatureScheme::Unknown => false,
+                    _ => {
+                        // not implemented yet
+                        false
+                    }
+                }
+            }
+            EllipticCurveAlgorithm::SM2 => {
+                if signature.scheme == SignatureScheme::SHA512withEDDSA {
+                    self.verify_ed25519(
+                        public_key.value_as_slice(),
+                        data.as_slice(),
+                        signature.value_as_slice(),
+                    )
+                } else {
+                    false
+                }
+            }
+            EllipticCurveAlgorithm::Unknown => false,
+        }
     }
 
     fn verify_multi_signature(
@@ -202,7 +236,7 @@ pub trait BlockHeaderSync {
                 if mask[j] {
                     continue;
                 }
-                if self.verify(data, &keys[j], sig) {
+                if self.verify(&keys[j], data, sig) {
                     mask[j] = true;
                     valid = true;
 
