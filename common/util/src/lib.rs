@@ -1,12 +1,12 @@
 #![no_std]
 
-use elrond_wasm::{Box, derive_imports};
+use elrond_wasm::Box;
 
 pub const POLYCHAIN_PUBKEY_LEN: usize = 67;
 pub const POLYCHAIN_SIGNATURE_LEN: usize = 65;
 pub const POLYCHAIN_EPOCH_HEIGHT: u32 = 60000;
 
-derive_imports!();
+elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi, Debug, PartialEq)]
 pub struct PublicKey(Box<[u8; POLYCHAIN_PUBKEY_LEN]>);
@@ -32,9 +32,7 @@ impl<'a> From<&'a [u8]> for PublicKey {
         let mut data = [0u8; POLYCHAIN_PUBKEY_LEN];
 
         if byte_slice.len() >= POLYCHAIN_PUBKEY_LEN {
-            for i in 0..POLYCHAIN_PUBKEY_LEN {
-                data[i] = byte_slice[i];
-            }
+            data.copy_from_slice(&byte_slice[0..POLYCHAIN_PUBKEY_LEN]);
         }
 
         PublicKey(Box::from(data))
@@ -47,9 +45,7 @@ impl<'a> From<&'a [u8]> for Signature {
         let mut data = [0u8; POLYCHAIN_SIGNATURE_LEN];
 
         if byte_slice.len() >= POLYCHAIN_SIGNATURE_LEN {
-            for i in 0..POLYCHAIN_SIGNATURE_LEN {
-                data[i] = byte_slice[i];
-            }
+            data.copy_from_slice(&byte_slice[0..POLYCHAIN_SIGNATURE_LEN]);
         }
 
         Signature(Box::from(data))
