@@ -4,6 +4,8 @@ use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
 
 use util::*;
+use signature::*;
+use public_key::*;
 use vbft_block_info::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
@@ -131,9 +133,9 @@ impl Header {
 		match source.next_var_uint() {
 			Some(len) => {
 				for _ in 0..len {
-					match source.next_public_key() {
-						Some(val) => book_keepers.push(val),
-						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					match PublicKey::decode_from_source(source) {
+						Ok(pub_key) => book_keepers.push(pub_key),
+						Err(err) => return Err(err)
 					}
 				}
 			},
@@ -143,9 +145,9 @@ impl Header {
 		match source.next_var_uint() {
 			Some(len) => {
 				for _ in 0..len {
-					match source.next_signature() {
-						Some(val) => sig_data.push(val),
-						None => return Err(DecodeError::INPUT_TOO_SHORT)
+					match Signature::decode_from_source(source) {
+						Ok(sig) => sig_data.push(sig),
+						Err(err) => return Err(err)
 					}
 				}
 			},
@@ -211,12 +213,12 @@ impl NestedEncode for Header {
 		
 		sink.write_var_uint(self.book_keepers.len() as u64);
 		for pubkey in &self.book_keepers {
-			sink.write_public_key(pubkey);
+			let _ = pubkey.dep_encode(&mut sink);
 		}
 
 		sink.write_var_uint(self.sig_data.len() as u64);
 		for sig in &self.sig_data {
-			sink.write_signature(sig);
+			let _ = sig.dep_encode(&mut sink);
 		}
 
 		sink.write_hash(&self.block_hash);

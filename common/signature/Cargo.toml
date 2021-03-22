@@ -1,5 +1,5 @@
 [package]
-name = "header"
+name = "signature"
 version = "0.0.0"
 authors = [ "dorin-iancu <dorin.iancu@elrond.com>",]
 edition = "2018"
@@ -16,14 +16,6 @@ version = "0.13.0"
 [dependencies.util]
 version = "0.0.0"
 path = "../util"
-
-[dependencies.signature]
-version = "0.0.0"
-path = "../signature"
-
-[dependencies.public-key]
-version = "0.0.0"
-path = "../public-key"
 
 [dependencies.zero-copy-sink]
 version = "0.0.0"
