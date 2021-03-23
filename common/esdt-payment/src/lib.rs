@@ -12,7 +12,7 @@ elrond_wasm::derive_imports!();
 pub struct EsdtPayment<BigUint: BigUintApi> {
     pub sender: Address,
     pub receiver: Address,
-    pub token_identifier: TokenIdentifier,
+    pub token_id: TokenIdentifier,
     pub amount: BigUint,
 }
 
@@ -22,7 +22,7 @@ impl<BigUint: BigUintApi> NestedEncode for EsdtPayment<BigUint> {
 
         sink.write_address(&self.sender);
         sink.write_address(&self.receiver);
-        sink.write_var_bytes(self.token_identifier.as_slice());
+        sink.write_var_bytes(self.token_id.as_esdt_identifier());
         sink.write_var_bytes(self.amount.to_bytes_be().as_slice());
 
         dest.write(sink.get_sink().as_slice());
@@ -63,7 +63,7 @@ impl<BigUint: BigUintApi> NestedDecode for EsdtPayment<BigUint> {
         return Ok(EsdtPayment {
             sender,
             receiver,
-            token_identifier: TokenIdentifier::from(token_identifier),
+            token_id: TokenIdentifier::from(token_identifier),
             amount,
         });
     }

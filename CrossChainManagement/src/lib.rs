@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(non_snake_case)]
 
 use esdt_payment::*;
 use header::*;
@@ -6,19 +7,26 @@ use transaction::*;
 
 elrond_wasm::imports!();
 
-const TRANSFER_ESDT_ENDPOINT_NAME: &[u8] = b"transferEsdt";
-
-const ESDT_BURN_STRING: &[u8] = b"ESDTBurn";
-
-// erd1qqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzllls8a5w6u
-const ESDT_SYSTEM_SC_ADDRESS_ARRAY: [u8; 32] = [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xff,
-];
-
 #[elrond_wasm_derive::callable(BlockHeaderSyncProxy)]
 pub trait BlockHeaderSync {
-    fn getHeaderByHeight(&self, chain_id: u64, height: u32) -> ContractCall<BigUint>;
+    fn getHeaderByHeight(
+        &self,
+        chain_id: u64,
+        height: u32,
+    ) -> ContractCall<BigUint, OptionalResult<Header>>;
+}
+
+#[elrond_wasm_derive::callable(EsdtTokenManagerProxy)]
+pub trait EsdtTokenManager {
+    fn transferEsdt(
+        &self,
+        token_identifier: TokenIdentifier,
+        amount: BigUint,
+        to: Address,
+        poly_tx_hash: H256,
+        func_name: BoxedBytes,
+        #[var_args] args: VarArgs<BoxedBytes>,
+    ) -> ContractCall<BigUint, Option<Header>>;
 }
 
 #[elrond_wasm_derive::contract(CrossChainManagementImpl)]
@@ -42,19 +50,19 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(addTokenToWhitelist)]
-    fn add_token_to_whitelist(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
+    fn add_token_to_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        self.token_whitelist().insert(token_identifier);
+        self.token_whitelist().insert(token_id);
 
         Ok(())
     }
 
     #[endpoint(removeTokenFromWhitelist)]
-    fn remove_token_from_whitelist(&self, token_identifier: TokenIdentifier) -> SCResult<()> {
+    fn remove_token_from_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
 
-        self.token_whitelist().remove(&token_identifier);
+        self.token_whitelist().remove(&token_id);
 
         Ok(())
     }
@@ -78,16 +86,16 @@ pub trait CrossChainManagement {
     }
 
     #[endpoint(burnTokens)]
-    fn burn_tokens(&self, token_identifier: TokenIdentifier) -> SCResult<AsyncCall<BigUint>> {
+    fn burn_tokens(&self, token_id: TokenIdentifier) -> SCResult<AsyncCall<BigUint>> {
         only_owner!(self, "only owner may call this function");
 
         let mut burn_amount_for_token_mapper = self.burn_amounts();
 
-        match burn_amount_for_token_mapper.get(&token_identifier) {
+        match burn_amount_for_token_mapper.get(&token_id) {
             Some(amount) => {
-                burn_amount_for_token_mapper.remove(&token_identifier);
+                burn_amount_for_token_mapper.remove(&token_id);
 
-                Ok(self.burn_esdt_token(&token_identifier, &amount))
+                Ok(self.burn_esdt_token(&token_id, &amount))
             }
             None => sc_error!("token is not in burn list"),
         }
@@ -114,10 +122,8 @@ pub trait CrossChainManagement {
             "Transaction must be processed as Pending first"
         );
         require!(
-            tx_status == TransactionStatus::OutOfFunds
-                || tx_status == TransactionStatus::Executed
-                || tx_status == TransactionStatus::Rejected,
-            "Transaction status may only be set to OutOfFunds, Executed or Rejected"
+            tx_status == TransactionStatus::Executed || tx_status == TransactionStatus::Rejected,
+            "Transaction status may only be set to Executed or Rejected"
         );
 
         self.tx_status(&poly_tx_hash).set(&tx_status);
@@ -211,7 +217,7 @@ pub trait CrossChainManagement {
             self.payment_for_tx(&tx.hash).set(&EsdtPayment {
                 sender: from_contract_address,
                 receiver: to_contract_address,
-                token_identifier,
+                token_id: token_identifier,
                 amount: esdt_value,
             });
         }
@@ -281,22 +287,43 @@ pub trait CrossChainManagement {
             self.tx_status(&poly_tx_hash).get() == TransactionStatus::Pending,
             "Transaction is not in Pending status"
         );
-
-        self.process_tx(&poly_tx_hash)
-    }
-
-    #[endpoint(retryOutOfFundsTx)]
-    fn retry_out_of_funds_tx(&self, poly_tx_hash: H256) -> SCResult<TransferEgldExecute<BigUint>> {
         require!(
-            self.tx_status(&poly_tx_hash).get() == TransactionStatus::OutOfFunds,
-            "Transaction is not in OutOfFunds status"
+            !self.token_management_contract_address().is_empty(),
+            "token management contract address not set"
+        );
+        require!(
+            !self.tx_by_hash(&poly_tx_hash).is_empty(),
+            "Transaction does not exist"
         );
 
-        self.process_tx(&poly_tx_hash)
+        let tx = self.tx_by_hash(&poly_tx_hash).get();
+
+        // this should never fail, but we'll check just in case
+        require!(tx.hash == poly_tx_hash, "Wrong poly transaction hash");
+
+        let esdt_payment = self.payment_for_tx(&poly_tx_hash).get();
+        let token_management_contract_address = self.token_management_contract_address().get();
+
+        self.tx_status(&tx.hash).set(&TransactionStatus::InProgress);
+
+        Ok(contract_call!(
+            self,
+            token_management_contract_address,
+            EsdtTokenManagerProxy
+        )
+        .transferEsdt(
+            esdt_payment.token_id,
+            esdt_payment.amount,
+            tx.to_contract_address,
+            tx.hash,
+            tx.method_name,
+            VarArgs::from(tx.method_args),
+        )
+        .transfer_egld_execute())
     }
 
     #[endpoint(getNextPendingCrossChainTx)]
-    fn get_next_pending_cross_chain_tx() -> OptionalResult<Transaction> {
+    fn get_next_pending_cross_chain_tx(&self) -> OptionalResult<Transaction> {
         match self.pending_cross_chain_tx_list().pop_front() {
             Some(poly_tx_hash) => OptionalResult::Some(self.tx_by_hash(&poly_tx_hash).get()),
             None => OptionalResult::None,
@@ -331,46 +358,6 @@ pub trait CrossChainManagement {
         self.sha256(tx.get_partial_serialized().as_slice())
     }
 
-    // deduplicates logic from ProcessPendingTx and RetryOutOfFundsTx
-    fn process_tx(&self, poly_tx_hash: &H256) -> SCResult<TransferEgldExecute<BigUint>> {
-        require!(
-            !self.token_management_contract_address().is_empty(),
-            "token management contract address not set"
-        );
-        require!(
-            !self.tx_by_hash(poly_tx_hash).is_empty(),
-            "Transaction does not exist"
-        );
-
-        let tx = self.tx_by_hash(poly_tx_hash).get();
-
-        // this should never fail, but we'll check just in case
-        require!(&tx.hash == poly_tx_hash, "Wrong poly transaction hash");
-
-        let esdt_payment = self.payment_for_tx(poly_tx_hash).get();
-        let token_management_contract_address = self.token_management_contract_address().get();
-
-        self.tx_status(&tx.hash).set(&TransactionStatus::InProgress);
-
-        let mut contract_call_raw = ContractCall::new(
-            token_management_contract_address,
-            TokenIdentifier::egld(),
-            BigUint::zero(),
-            BoxedBytes::from(TRANSFER_ESDT_ENDPOINT_NAME),
-        );
-        contract_call_raw.push_argument_raw_bytes(esdt_payment.token_identifier.as_slice());
-        contract_call_raw.push_argument_raw_bytes(esdt_payment.amount.to_bytes_be().as_slice());
-        contract_call_raw.push_argument_raw_bytes(tx.to_contract_address.as_bytes());
-        contract_call_raw.push_argument_raw_bytes(tx.hash.as_bytes());
-
-        contract_call_raw.push_argument_raw_bytes(tx.method_name.as_slice());
-        for arg in &tx.method_args {
-            contract_call_raw.push_argument_raw_bytes(arg.as_slice());
-        }
-
-        Ok(contract_call_raw.transfer_egld_execute())
-    }
-
     fn add_tx_payment_to_burn_list(&self, poly_tx_hash: &H256) {
         if self.payment_for_tx(poly_tx_hash).is_empty() {
             return;
@@ -378,7 +365,7 @@ pub trait CrossChainManagement {
 
         let esdt_payment = self.payment_for_tx(poly_tx_hash).get();
 
-        let mut current_burn_amount = match self.burn_amounts().get(&esdt_payment.token_identifier)
+        let mut current_burn_amount = match self.burn_amounts().get(&esdt_payment.token_id)
         {
             Some(amount) => amount,
             None => BigUint::zero(),
@@ -386,7 +373,7 @@ pub trait CrossChainManagement {
         current_burn_amount += esdt_payment.amount;
 
         self.burn_amounts()
-            .insert(esdt_payment.token_identifier, current_burn_amount);
+            .insert(esdt_payment.token_id, current_burn_amount);
 
         self.payment_for_tx(poly_tx_hash).clear();
     }
@@ -396,16 +383,9 @@ pub trait CrossChainManagement {
         token_identifier: &TokenIdentifier,
         amount: &BigUint,
     ) -> AsyncCall<BigUint> {
-        let mut contract_call_raw = ContractCall::new(
-            Address::from(ESDT_SYSTEM_SC_ADDRESS_ARRAY),
-            TokenIdentifier::egld(),
-            BigUint::zero(),
-            BoxedBytes::from(ESDT_BURN_STRING),
-        );
-        contract_call_raw.push_argument_raw_bytes(token_identifier.as_slice());
-        contract_call_raw.push_argument_raw_bytes(&amount.to_bytes_be());
-
-        contract_call_raw.async_call()
+        ESDTSystemSmartContractProxy::new()
+            .burn(token_identifier.as_esdt_identifier(), amount)
+            .async_call()
     }
 
     fn refund_payment_for_tx(&self, poly_tx_hash: &H256) {
@@ -417,10 +397,18 @@ pub trait CrossChainManagement {
 
         self.send().direct_esdt_via_async_call(
             &payment.sender,
-            payment.token_identifier.as_slice(),
+            payment.token_id.as_esdt_identifier(),
             &payment.amount,
-            b"refund",
+            self.data_or_empty(&payment.sender, b"refund"),
         );
+    }
+
+    fn data_or_empty(&self, to: &Address, data: &'static [u8]) -> &[u8] {
+        if self.is_smart_contract(to) {
+            &[]
+        } else {
+            data
+        }
     }
 
     // callbacks
@@ -457,7 +445,7 @@ pub trait CrossChainManagement {
                             self.payment_for_tx(&tx.hash).set(&EsdtPayment {
                                 sender: tx.from_contract_address,
                                 receiver: tx.to_contract_address,
-                                token_identifier,
+                                token_id: token_identifier,
                                 amount,
                             });
                         }

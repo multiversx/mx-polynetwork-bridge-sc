@@ -13,7 +13,6 @@ pub enum TransactionStatus {
 	None,
 	Pending,
 	InProgress,
-	OutOfFunds,
 	Executed,
 	Rejected,
 }
