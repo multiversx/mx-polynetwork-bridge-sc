@@ -13,7 +13,7 @@ pub trait BlockHeaderSync {
         &self,
         chain_id: u64,
         height: u32,
-    ) -> ContractCall<BigUint, OptionalResult<Header>>;
+    ) -> ContractCall<BigUint, Option<Header>>;
 }
 
 #[elrond_wasm_derive::callable(EsdtTokenManagerProxy)]
