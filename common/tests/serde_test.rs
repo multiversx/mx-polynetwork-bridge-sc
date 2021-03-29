@@ -1,4 +1,4 @@
-extern crate header;
+/*extern crate header;
 use header::*;
 
 use peer_config::*;
@@ -265,3 +265,4 @@ fn header_test() {
 
     assert_eq!(original, deserialized);
 }
+*/

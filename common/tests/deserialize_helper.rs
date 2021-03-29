@@ -1,4 +1,4 @@
-extern crate transaction;
+/*extern crate transaction;
 use transaction::*;
 
 extern crate esdt_payment;
@@ -76,3 +76,4 @@ fn deserialize_esdt_payment_first_scenario() {
 fn deserialize_esdt_payment_second_scenario() {
     deserialize_esdt_payment("00000000000000000000000000000000000000000000000000000000000000000139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e10b574554482d3937356563660106");
 }
+*/
