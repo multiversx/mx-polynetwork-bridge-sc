@@ -284,6 +284,7 @@ pub trait BlockHeaderSync {
 
     // current height
 
+    #[view(getCurrentHeight)]
     #[storage_mapper("currentHeight")]
     fn current_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
 
