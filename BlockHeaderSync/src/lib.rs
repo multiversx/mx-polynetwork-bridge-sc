@@ -64,20 +64,20 @@ pub trait BlockHeaderSync {
     }
 
     #[view(getHeaderByHeight)]
-    fn get_header_by_height_endpoint(&self, chain_id: u64, height: u32) -> Option<Header> {
+    fn get_header_by_height_endpoint(&self, chain_id: u64, height: u32) -> OptionalResult<Header> {
         if !self.header_by_height(chain_id, height).is_empty() {
-            Some(self.header_by_height(chain_id, height).get())
+            OptionalResult::Some(self.header_by_height(chain_id, height).get())
         } else {
-            None
+            OptionalResult::None
         }
     }
 
     #[view(getHeaderByHash)]
-    fn get_header_by_hash_endpoint(&self, chain_id: u64, hash: &H256) -> Option<Header> {
+    fn get_header_by_hash_endpoint(&self, chain_id: u64, hash: &H256) -> OptionalResult<Header> {
         if !self.header_by_hash(chain_id, hash).is_empty() {
-            Some(self.header_by_hash(chain_id, hash).get())
+            OptionalResult::Some(self.header_by_hash(chain_id, hash).get())
         } else {
-            None
+            OptionalResult::None
         }
     }
 
@@ -90,7 +90,7 @@ pub trait BlockHeaderSync {
             Some(k) => k,
             None => return sc_error!("Couldn't find key height!"),
         };
-        let prev_consensus = self.get_consensus_peers(chain_id, key_height);
+        let prev_consensus = self.consensus_peers(chain_id, key_height).get();
 
         if header.book_keepers.len() * 3 < prev_consensus.len() * 2 {
             return sc_error!("Header bookkeepers num must be > 2/3 of consensus num");
@@ -130,7 +130,7 @@ pub trait BlockHeaderSync {
 
                 // update consensus peer list
                 if !chain_config.peers.is_empty() {
-                    self.set_consensus_peers(chain_id, height, &chain_config.peers);
+                    self.consensus_peers(chain_id, height).set(&chain_config.peers);
                 } else {
                     return sc_error!("Consensus peer list is empty!");
                 }
@@ -259,12 +259,8 @@ pub trait BlockHeaderSync {
 
     // storage
 
-    // genesis header
-
     #[storage_mapper("genesisHeader")]
     fn genesis_header(&self) -> SingleValueMapper<Self::Storage, Header>;
-
-    // header by hash
 
     #[storage_mapper("headerByHash")]
     fn header_by_hash(
@@ -273,8 +269,6 @@ pub trait BlockHeaderSync {
         hash: &H256,
     ) -> SingleValueMapper<Self::Storage, Header>;
 
-    // header by height
-
     #[storage_mapper("headerByHeight")]
     fn header_by_height(
         &self,
@@ -282,21 +276,12 @@ pub trait BlockHeaderSync {
         height: u32,
     ) -> SingleValueMapper<Self::Storage, Header>;
 
-    // current height
-
     #[view(getCurrentHeight)]
     #[storage_mapper("currentHeight")]
     fn current_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
 
-    // consensus peers
-
-    #[storage_get("consensusPeers")]
-    fn get_consensus_peers(&self, chain_id: u64, height: u32) -> Vec<PeerConfig>;
-
-    #[storage_set("consensusPeers")]
-    fn set_consensus_peers(&self, chain_id: u64, height: u32, peers: &[PeerConfig]);
-
-    // key height list
+    #[storage_mapper("consensusPeers")]
+    fn consensus_peers(&self, chain_id: u64, height: u32) -> SingleValueMapper<Self::Storage, Vec<PeerConfig>>;
 
     #[storage_mapper("keyHeightList")]
     fn key_height_list(&self, chain_id: u64) -> LinkedListMapper<Self::Storage, u32>;

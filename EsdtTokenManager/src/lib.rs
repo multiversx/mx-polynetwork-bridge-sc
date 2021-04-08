@@ -143,7 +143,7 @@ pub trait EsdtTokenManager {
     // endpoints - CrossChainManagement contract - only
 
     #[endpoint(transferEsdt)]
-    fn transfer_esdt_endpoint(
+    fn transfer_esdt(
         &self,
         token_id: TokenIdentifier,
         amount: BigUint,
@@ -181,17 +181,12 @@ pub trait EsdtTokenManager {
                 ))
             }
         } else {
-            if token_id != self.wrapped_egld_token_identifier().get() {
-                self.send().direct_esdt_via_transf_exec(
-                    &to,
-                    token_id.as_esdt_identifier(),
-                    &amount,
-                    b"offchain transfer",
-                );
-            } else {
-                // automatically unwrap before sending if the token is wrapped eGLD
-                self.send().direct_egld(&to, &amount, b"offchain transfer");
-            }
+            self.send().direct_esdt_via_transf_exec(
+                &to,
+                token_id.as_esdt_identifier(),
+                &amount,
+                b"offchain transfer",
+            );
 
             Ok(TransferEsdtActionResult::TransferEgldExecute(
                 self.complete_tx(poly_tx_hash, TransactionStatus::Executed),

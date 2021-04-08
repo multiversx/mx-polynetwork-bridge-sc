@@ -13,7 +13,7 @@ pub trait BlockHeaderSync {
         &self,
         chain_id: u64,
         height: u32,
-    ) -> ContractCall<BigUint, Option<Header>>;
+    ) -> ContractCall<BigUint, OptionalResult<Header>>;
 }
 
 #[elrond_wasm_derive::callable(EsdtTokenManagerProxy)]
@@ -26,7 +26,7 @@ pub trait EsdtTokenManager {
         poly_tx_hash: H256,
         func_name: BoxedBytes,
         #[var_args] args: VarArgs<BoxedBytes>,
-    ) -> ContractCall<BigUint, Option<Header>>;
+    ) -> ContractCall<BigUint, ()>;
 }
 
 #[elrond_wasm_derive::contract(CrossChainManagementImpl)]
@@ -241,7 +241,7 @@ pub trait CrossChainManagement {
         tx: Transaction,
         token_identifier: TokenIdentifier,
         amount: BigUint,
-    ) -> SCResult<AsyncCall<BigUint>> {
+    ) -> SCResult<()> {
         require!(
             !self.token_management_contract_address().is_empty(),
             "token management contract address not set"
@@ -261,7 +261,6 @@ pub trait CrossChainManagement {
         if !self.is_smart_contract(&tx.to_contract_address) && !tx.method_name.is_empty() {
             return sc_error!("Can't call function, destination is not a smart contract");
         }
-
         if token_identifier.is_esdt() && amount > 0 {
             require!(
                 self.token_whitelist().contains(&token_identifier),
@@ -269,16 +268,48 @@ pub trait CrossChainManagement {
             );
         }
 
-        let contract_address = self.header_sync_contract_address().get();
+        let block_header_sync_address = self.header_sync_contract_address().get();
+        let contract_call = contract_call!(self, block_header_sync_address, BlockHeaderSyncProxy);
 
-        Ok(contract_call!(self, contract_address, BlockHeaderSyncProxy)
+        let opt_header = contract_call
             .getHeaderByHeight(from_chain_id, height)
-            .async_call()
-            .with_callback(self.callbacks().get_header_by_height_callback(
-                tx,
-                token_identifier,
-                amount,
-            )))
+            .execute_on_dest_context(self.get_gas_left(), self.send());
+
+        match opt_header {
+            OptionalResult::Some(_header) => {
+                // TODO: check tx proof
+
+                self.tx_by_hash(&tx.hash).set(&tx);
+                self.tx_status(&tx.hash).set(&TransactionStatus::Pending);
+
+                // TODO: Add transactions to a list (or is fired event enough?)
+                // TODO: Decide how the tx hashes are linked to the Header
+
+                self.receive_tx_event(&tx);
+
+                if token_identifier.is_esdt() && amount > 0 {
+                    self.payment_for_tx(&tx.hash).set(&EsdtPayment {
+                        sender: tx.from_contract_address,
+                        receiver: tx.to_contract_address,
+                        token_id: token_identifier,
+                        amount,
+                    });
+                }
+                else {
+                    self.payment_for_tx(&tx.hash).set(&EsdtPayment {
+                        sender: tx.from_contract_address,
+                        receiver: tx.to_contract_address,
+                        token_id: TokenIdentifier::egld(),
+                        amount: BigUint::zero(),
+                    });
+                }
+
+                Ok(())
+            }
+            OptionalResult::None => {
+                sc_error!("Could not find header")
+            }
+        }
     }
 
     #[endpoint(processPendingTx)]
@@ -365,8 +396,7 @@ pub trait CrossChainManagement {
 
         let esdt_payment = self.payment_for_tx(poly_tx_hash).get();
 
-        let mut current_burn_amount = match self.burn_amounts().get(&esdt_payment.token_id)
-        {
+        let mut current_burn_amount = match self.burn_amounts().get(&esdt_payment.token_id) {
             Some(amount) => amount,
             None => BigUint::zero(),
         };
@@ -408,55 +438,6 @@ pub trait CrossChainManagement {
             &[]
         } else {
             data
-        }
-    }
-
-    // callbacks
-
-    #[callback]
-    fn get_header_by_height_callback(
-        &self,
-        #[call_result] result: AsyncCallResult<Option<Header>>,
-        tx: Transaction,
-        token_identifier: TokenIdentifier,
-        amount: BigUint,
-    ) {
-        match result {
-            AsyncCallResult::Ok(opt_header) => {
-                match opt_header {
-                    Some(_header) => {
-                        // if this is not empty, it means processCrossChainTx was called more than once with the same tx
-                        // so this should not be executed again
-                        if !self.tx_by_hash(&tx.hash).is_empty() {
-                            return;
-                        }
-
-                        // TODO: check tx proof
-
-                        self.tx_by_hash(&tx.hash).set(&tx);
-                        self.tx_status(&tx.hash).set(&TransactionStatus::Pending);
-
-                        // TODO: Add transactions to a list (or is fired event enough?)
-                        // TODO: Decide how the tx hashes are linked to the Header
-
-                        self.receive_tx_event(&tx);
-
-                        if token_identifier.is_esdt() && amount > 0 {
-                            self.payment_for_tx(&tx.hash).set(&EsdtPayment {
-                                sender: tx.from_contract_address,
-                                receiver: tx.to_contract_address,
-                                token_id: token_identifier,
-                                amount,
-                            });
-                        }
-                    }
-                    None => {
-                        // could not find header
-                        // should sync header first
-                    }
-                };
-            }
-            AsyncCallResult::Err(_) => {}
         }
     }
 
