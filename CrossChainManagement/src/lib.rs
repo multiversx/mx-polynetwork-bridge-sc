@@ -287,22 +287,26 @@ pub trait CrossChainManagement {
 
                 self.receive_tx_event(&tx);
 
-                if token_identifier.is_esdt() && amount > 0 {
-                    self.payment_for_tx(&tx.hash).set(&EsdtPayment {
-                        sender: tx.from_contract_address,
-                        receiver: tx.to_contract_address,
+                let esdt_payment = if token_identifier.is_esdt() && amount > 0 {
+                    EsdtPayment {
+                        sender: tx.from_contract_address.clone(),
+                        receiver: tx.to_contract_address.clone(),
                         token_id: token_identifier,
                         amount,
-                    });
-                }
-                else {
-                    self.payment_for_tx(&tx.hash).set(&EsdtPayment {
-                        sender: tx.from_contract_address,
-                        receiver: tx.to_contract_address,
+                    }
+                } else {
+                    EsdtPayment {
+                        sender: tx.from_contract_address.clone(),
+                        receiver: tx.to_contract_address.clone(),
                         token_id: TokenIdentifier::egld(),
                         amount: BigUint::zero(),
-                    });
-                }
+                    }
+                };
+
+                self.payment_for_tx(&tx.hash).set(&esdt_payment);
+
+                // Process transaction
+                self.process_pending_tx(tx, esdt_payment);
 
                 Ok(())
             }
@@ -310,47 +314,6 @@ pub trait CrossChainManagement {
                 sc_error!("Could not find header")
             }
         }
-    }
-
-    #[endpoint(processPendingTx)]
-    fn process_pending_tx(&self, poly_tx_hash: H256) -> SCResult<TransferEgldExecute<BigUint>> {
-        require!(
-            self.tx_status(&poly_tx_hash).get() == TransactionStatus::Pending,
-            "Transaction is not in Pending status"
-        );
-        require!(
-            !self.token_management_contract_address().is_empty(),
-            "token management contract address not set"
-        );
-        require!(
-            !self.tx_by_hash(&poly_tx_hash).is_empty(),
-            "Transaction does not exist"
-        );
-
-        let tx = self.tx_by_hash(&poly_tx_hash).get();
-
-        // this should never fail, but we'll check just in case
-        require!(tx.hash == poly_tx_hash, "Wrong poly transaction hash");
-
-        let esdt_payment = self.payment_for_tx(&poly_tx_hash).get();
-        let token_management_contract_address = self.token_management_contract_address().get();
-
-        self.tx_status(&tx.hash).set(&TransactionStatus::InProgress);
-
-        Ok(contract_call!(
-            self,
-            token_management_contract_address,
-            EsdtTokenManagerProxy
-        )
-        .transferEsdt(
-            esdt_payment.token_id,
-            esdt_payment.amount,
-            tx.to_contract_address,
-            tx.hash,
-            tx.method_name,
-            VarArgs::from(tx.method_args),
-        )
-        .transfer_egld_execute())
     }
 
     #[endpoint(getNextPendingCrossChainTx)]
@@ -384,6 +347,34 @@ pub trait CrossChainManagement {
     }
 
     // private
+
+    fn process_pending_tx(&self, tx: Transaction, esdt_payment: EsdtPayment<BigUint>) {
+        let token_management_contract_address = self.token_management_contract_address().get();
+
+        self.tx_status(&tx.hash).set(&TransactionStatus::InProgress);
+
+        contract_call!(
+            self,
+            token_management_contract_address,
+            EsdtTokenManagerProxy
+        )
+        .transferEsdt(
+            esdt_payment.token_id,
+            esdt_payment.amount,
+            tx.to_contract_address,
+            tx.hash.clone(),
+            tx.method_name,
+            VarArgs::from(tx.method_args),
+        )
+        .execute_on_dest_context(self.get_gas_left(), self.send());
+
+        // If tx destination is a simple account, this will execute immediately
+        // (Most transfers should be simple transfer between accounts, and not scCalls)
+        // otherwise, the status will be set accordingly by the result of the async call
+        // The EsdtTokenManager will call this contract in its callback and set the status
+        // This is done through the complete_tx endpoint
+        self.tx_status(&tx.hash).set(&TransactionStatus::Executed);
+    }
 
     fn hash_transaction(&self, tx: &Transaction) -> H256 {
         self.sha256(tx.get_partial_serialized().as_slice())

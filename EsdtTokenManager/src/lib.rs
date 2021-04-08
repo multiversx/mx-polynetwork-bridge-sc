@@ -6,9 +6,6 @@ use transaction::TransactionStatus;
 
 elrond_wasm::imports!();
 
-pub mod transfer_esdt_action_result;
-use transfer_esdt_action_result::*;
-
 const WRAPPED_EGLD_DISPLAY_NAME: &[u8] = b"WrappedEGLD";
 const WRAPPED_EGLD_TICKER: &[u8] = b"WEGLD";
 const EGLD_DECIMALS: usize = 18;
@@ -112,10 +109,6 @@ pub trait EsdtTokenManager {
             self.issued_tokens().contains(&token_id),
             "Token was not issued yet"
         );
-        require!(
-            !self.are_local_roles_set(&token_id).get(),
-            "Local roles were already set"
-        );
 
         Ok(ESDTSystemSmartContractProxy::new()
             .set_special_roles(
@@ -123,8 +116,7 @@ pub trait EsdtTokenManager {
                 token_id.as_esdt_identifier(),
                 &[EsdtLocalRole::Mint, EsdtLocalRole::Burn],
             )
-            .async_call()
-            .with_callback(self.callbacks().set_roles_callback(token_id)))
+            .async_call())
     }
 
     #[endpoint(mintEsdtToken)]
@@ -137,7 +129,13 @@ pub trait EsdtTokenManager {
         );
         require!(amount > 0, "Amount minted must be more than 0");
 
-        self.try_mint(&token_id, &amount)
+        self.send().esdt_local_mint(
+            self.get_gas_left(),
+            token_id.as_esdt_identifier(),
+            &amount,
+        );
+
+        Ok(())
     }
 
     // endpoints - CrossChainManagement contract - only
@@ -151,7 +149,7 @@ pub trait EsdtTokenManager {
         poly_tx_hash: H256,
         func_name: BoxedBytes,
         #[var_args] args: VarArgs<BoxedBytes>,
-    ) -> SCResult<TransferEsdtActionResult<BigUint>> {
+    ) -> SCResult<OptionalResult<AsyncCall<BigUint>>> {
         require!(
             self.get_caller() == self.cross_chain_management_contract_address().get(),
             "Only the cross chain management contract may call this function"
@@ -165,21 +163,18 @@ pub trait EsdtTokenManager {
         if total_wrapped < amount {
             let extra_needed = &amount - &total_wrapped;
 
-            sc_try!(self.try_mint(&token_id, &extra_needed));
+            self.send().esdt_local_mint(
+                self.get_gas_left(),
+                token_id.as_esdt_identifier(),
+                &extra_needed,
+            );
         }
 
         if self.is_smart_contract(&to) {
-            if token_id != self.wrapped_egld_token_identifier().get() {
-                Ok(TransferEsdtActionResult::AsyncCall(
-                    self.async_transfer_esdt(to, token_id, amount, func_name, args.as_slice())
-                        .with_callback(self.callbacks().async_transfer_callback(poly_tx_hash)),
-                ))
-            } else {
-                // automatically unwrap before sending if the token is wrapped eGLD
-                Ok(TransferEsdtActionResult::AsyncCall(
-                    self.async_transfer_egld(to, amount, func_name, args.as_slice()),
-                ))
-            }
+            Ok(OptionalResult::Some(
+                self.async_transfer_esdt(to, token_id, amount, func_name, args.as_slice())
+                    .with_callback(self.callbacks().async_transfer_callback(poly_tx_hash)
+            )))
         } else {
             self.send().direct_esdt_via_transf_exec(
                 &to,
@@ -188,9 +183,7 @@ pub trait EsdtTokenManager {
                 b"offchain transfer",
             );
 
-            Ok(TransferEsdtActionResult::TransferEgldExecute(
-                self.complete_tx(poly_tx_hash, TransactionStatus::Executed),
-            ))
+            Ok(OptionalResult::None)
         }
     }
 
@@ -294,46 +287,18 @@ pub trait EsdtTokenManager {
         contract_call_raw.async_call()
     }
 
-    fn async_transfer_egld(
-        &self,
-        to: Address,
-        amount: BigUint,
-        func_name: BoxedBytes,
-        args: &[BoxedBytes],
-    ) -> AsyncCall<BigUint> {
-        let mut contract_call_raw =
-            ContractCall::<BigUint, ()>::new(to, TokenIdentifier::egld(), amount, func_name);
-        for arg in args {
-            contract_call_raw.push_argument_raw_bytes(arg.as_slice());
-        }
-
-        contract_call_raw.async_call()
-    }
-
     fn complete_tx(
         &self,
         poly_tx_hash: H256,
         tx_status: TransactionStatus,
-    ) -> TransferEgldExecute<BigUint> {
+    ) {
         contract_call!(
             self,
             self.cross_chain_management_contract_address().get(),
             CrossChainManagementProxy
         )
         .completeTx(poly_tx_hash, tx_status)
-        .transfer_egld_execute()
-    }
-
-    fn try_mint(&self, token_id: &TokenIdentifier, amount: &BigUint) -> SCResult<()> {
-        require!(
-            self.are_local_roles_set(token_id).get(),
-            "LocalMint role not set"
-        );
-
-        self.send()
-            .esdt_local_mint(self.get_gas_left(), token_id.as_esdt_identifier(), &amount);
-
-        Ok(())
+        .execute_on_dest_context(self.get_gas_left(), self.send());
     }
 
     fn data_or_empty(&self, to: &Address, data: &'static [u8]) -> &[u8] {
@@ -376,25 +341,11 @@ pub trait EsdtTokenManager {
     }
 
     #[callback]
-    fn set_roles_callback(
-        &self,
-        token_id: TokenIdentifier,
-        #[call_result] result: AsyncCallResult<()>,
-    ) {
-        match result {
-            AsyncCallResult::Ok(()) => {
-                self.are_local_roles_set(&token_id).set(&true);
-            }
-            AsyncCallResult::Err(_) => {}
-        }
-    }
-
-    #[callback]
     fn async_transfer_callback(
         &self,
         poly_tx_hash: H256,
         #[call_result] result: AsyncCallResult<()>,
-    ) -> TransferEgldExecute<BigUint> {
+    ) {
         match result {
             AsyncCallResult::Ok(()) => self.complete_tx(poly_tx_hash, TransactionStatus::Executed),
             AsyncCallResult::Err(_) => self.complete_tx(poly_tx_hash, TransactionStatus::Rejected),
@@ -417,13 +368,6 @@ pub trait EsdtTokenManager {
 
     #[storage_mapper("crossChainManagementContractAddress")]
     fn cross_chain_management_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
-
-    #[view(areLocalRolesSet)]
-    #[storage_mapper("areLocalRolesSet")]
-    fn are_local_roles_set(
-        &self,
-        token_id: &TokenIdentifier,
-    ) -> SingleValueMapper<Self::Storage, bool>;
 
     #[storage_mapper("issuedTokens")]
     fn issued_tokens(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
