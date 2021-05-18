@@ -175,12 +175,12 @@ pub trait CrossChainManagement {
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
+        #[payment_token] token_identifier: TokenIdentifier,
+        #[payment] esdt_value: BigUint,
         to_chain_id: u64,
         to_contract_address: Address,
         method_name: BoxedBytes,
-        method_args: Vec<BoxedBytes>,
-        #[payment_token] token_identifier: TokenIdentifier,
-        #[payment] esdt_value: BigUint,
+        #[var_args] method_args: VarArgs<BoxedBytes>,
     ) -> SCResult<()> {
         require!(
             !self.token_management_contract_address().is_empty(),
@@ -204,7 +204,7 @@ pub trait CrossChainManagement {
             to_chain_id,
             to_contract_address: to_contract_address.clone(),
             method_name,
-            method_args,
+            method_args: method_args.into_vec(),
         };
         tx.hash = self.hash_transaction(&tx);
 
