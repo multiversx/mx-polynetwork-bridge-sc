@@ -1,7 +1,7 @@
 #![no_std]
 
 use elrond_wasm::{api::BigUintApi, elrond_codec::*};
-use elrond_wasm::types::{Address, TokenIdentifier};
+use elrond_wasm::types::{BoxedBytes, TokenIdentifier};
 
 use zero_copy_sink::*;
 use zero_copy_source::*;
@@ -10,8 +10,8 @@ elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi)]
 pub struct EsdtPayment<BigUint: BigUintApi> {
-    pub sender: Address,
-    pub receiver: Address,
+    pub sender: BoxedBytes,
+    pub receiver: BoxedBytes,
     pub token_id: TokenIdentifier,
     pub amount: BigUint,
 }
@@ -20,8 +20,8 @@ impl<BigUint: BigUintApi> NestedEncode for EsdtPayment<BigUint> {
     fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
         let mut sink = ZeroCopySink::new();
 
-        sink.write_address(&self.sender);
-        sink.write_address(&self.receiver);
+        sink.write_var_bytes(self.sender.as_slice());
+        sink.write_var_bytes(self.receiver.as_slice());
         sink.write_var_bytes(self.token_id.as_esdt_identifier());
         sink.write_var_bytes(self.amount.to_bytes_be().as_slice());
 
@@ -40,12 +40,12 @@ impl<BigUint: BigUintApi> NestedDecode for EsdtPayment<BigUint> {
         let token_identifier;
         let amount;
 
-        match source.next_address() {
+        match source.next_var_bytes() {
             Some(val) => sender = val,
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
-        match source.next_address() {
+        match source.next_var_bytes() {
             Some(val) => receiver = val,
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };

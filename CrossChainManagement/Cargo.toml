@@ -11,34 +11,29 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-version = "0.14.2"
+version = "0.16.2"
 
 [dependencies.elrond-wasm-derive]
-version = "0.14.2"
+version = "0.16.2"
 
 [dependencies.elrond-wasm-node]
-version = "0.14.2"
+version = "0.16.2"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.14.2"
+version = "0.16.2"
 
 [dependencies.header]
-version = "0.0.0"
 path = "../common/header"
 
 [dependencies.transaction]
-version = "0.0.0"
 path = "../common/transaction"
 
 [dependencies.esdt-payment]
-version = "0.0.0"
 path = "../common/esdt-payment"
 
 [dependencies.util]
-version = "0.0.0"
 path = "../common/util"
 
 [dependencies.block-header-sync]
-version = "0.0.0"
 path = "../BlockHeaderSync"
