@@ -10,7 +10,7 @@ use signature::*;
 
 elrond_wasm::imports!();
 
-#[elrond_wasm_derive::contract(BlockHeaderSyncImpl)]
+#[elrond_wasm_derive::contract]
 pub trait BlockHeaderSync {
     #[init]
     fn init(&self) {}
@@ -28,15 +28,13 @@ pub trait BlockHeaderSync {
             "Invalid genesis header!"
         );
 
-        let sc_result = self.update_consensus_peer(&header);
-        if sc_result.is_ok() {
-            self.genesis_header().set(&header);
-            self.store_header(&header);
+        self.try_update_consensus_peer(&header)?;
+        self.genesis_header().set(&header);
+        self.store_header(&header);
 
-            self.block_header_sync_event(&header);
-        }
+        self.block_header_sync_event(&header);
 
-        sc_result
+        Ok(())
     }
 
     #[endpoint(syncBlockHeader)]
@@ -50,13 +48,9 @@ pub trait BlockHeaderSync {
                 Err(err) => return Err(err),
             };
 
-            let sc_result = self.update_consensus_peer(&header);
-            if sc_result.is_ok() {
-                self.store_header(&header);
-                self.block_header_sync_event(&header);
-            }
-
-            return sc_result;
+            self.try_update_consensus_peer(&header)?;
+            self.store_header(&header);
+            self.block_header_sync_event(&header);
         }
 
         // if block exists already, no sync needed
@@ -92,9 +86,10 @@ pub trait BlockHeaderSync {
         };
         let prev_consensus = self.consensus_peers(chain_id, key_height).get();
 
-        if header.book_keepers.len() * 3 < prev_consensus.len() * 2 {
-            return sc_error!("Header bookkeepers num must be > 2/3 of consensus num");
-        }
+        require!(
+            header.book_keepers.len() > prev_consensus.len() * 2 / 3,
+            "Header bookkeepers num must be > 2/3 of consensus num"
+        );
 
         for bk in &header.book_keepers {
             let mut serialized_key = Vec::new();
@@ -102,9 +97,10 @@ pub trait BlockHeaderSync {
             let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
 
             // if key doesn't exist, something is wrong
-            if !prev_consensus.iter().any(|p| p.id == key_id) {
-                return sc_error!("Invalid pubkey!");
-            }
+            require!(
+                prev_consensus.iter().any(|p| p.id == key_id),
+                "Invalid pubkey!"
+            );
         }
 
         let hashed_header = BoxedBytes::from(self.hash_header(header).as_bytes());
@@ -119,7 +115,7 @@ pub trait BlockHeaderSync {
 
     // private
 
-    fn update_consensus_peer(&self, header: &Header) -> SCResult<()> {
+    fn try_update_consensus_peer(&self, header: &Header) -> SCResult<()> {
         if let Some(consensus_payload) = &header.consensus_payload {
             if let Some(chain_config) = &consensus_payload.new_chain_config {
                 let chain_id = header.chain_id;
@@ -129,11 +125,12 @@ pub trait BlockHeaderSync {
                 self.key_height_list(chain_id).push_back(height);
 
                 // update consensus peer list
-                if !chain_config.peers.is_empty() {
-                    self.consensus_peers(chain_id, height).set(&chain_config.peers);
-                } else {
-                    return sc_error!("Consensus peer list is empty!");
-                }
+                require!(
+                    !chain_config.peers.is_empty(),
+                    "Consensus peer list is empty!"
+                );
+                self.consensus_peers(chain_id, height)
+                    .set(&chain_config.peers);
             }
         }
 
@@ -144,8 +141,9 @@ pub trait BlockHeaderSync {
 
     /// hashed twice, for some reason
     fn hash_header(&self, header: &Header) -> H256 {
-        self.sha256(
-            self.sha256(header.get_partial_serialized().as_slice())
+        self.crypto().sha256(
+            self.crypto()
+                .sha256(header.get_partial_serialized().as_slice())
                 .as_bytes(),
         )
     }
@@ -187,7 +185,7 @@ pub trait BlockHeaderSync {
                     SignatureScheme::SM3withSM2 => {
                         // not implemented for DSA signature yet
 
-                        self.verify_secp256k1(
+                        self.crypto().verify_secp256k1(
                             public_key.value_as_slice(),
                             data.as_slice(),
                             signature.value_as_slice(),
@@ -202,7 +200,7 @@ pub trait BlockHeaderSync {
             }
             EllipticCurveAlgorithm::SM2 => {
                 if signature.scheme == SignatureScheme::SHA512withEDDSA {
-                    self.verify_ed25519(
+                    self.crypto().verify_ed25519(
                         public_key.value_as_slice(),
                         data.as_slice(),
                         signature.value_as_slice(),
@@ -222,11 +220,9 @@ pub trait BlockHeaderSync {
         min_sigs: usize,
         sigs: &[Signature],
     ) -> SCResult<()> {
-        if sigs.len() < min_sigs {
-            return sc_error!("Not enough signatures!");
-        }
+        require!(sigs.len() >= min_sigs, "Not enough signatures!");
 
-        let mut mask = Vec::with_capacity(keys.len());
+        let mut mask = Vec::new();
         mask.resize(keys.len(), false);
 
         for sig in sigs {
@@ -244,9 +240,7 @@ pub trait BlockHeaderSync {
                 }
             }
 
-            if !valid {
-                return sc_error!("Multi-signature verification failed!");
-            }
+            require!(valid, "Multi-signature verification failed!");
         }
 
         Ok(())
@@ -281,7 +275,11 @@ pub trait BlockHeaderSync {
     fn current_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
 
     #[storage_mapper("consensusPeers")]
-    fn consensus_peers(&self, chain_id: u64, height: u32) -> SingleValueMapper<Self::Storage, Vec<PeerConfig>>;
+    fn consensus_peers(
+        &self,
+        chain_id: u64,
+        height: u32,
+    ) -> SingleValueMapper<Self::Storage, Vec<PeerConfig>>;
 
     #[storage_mapper("keyHeightList")]
     fn key_height_list(&self, chain_id: u64) -> LinkedListMapper<Self::Storage, u32>;

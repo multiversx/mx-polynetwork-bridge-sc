@@ -7,30 +7,10 @@ use transaction::*;
 
 elrond_wasm::imports!();
 
-#[elrond_wasm_derive::callable(BlockHeaderSyncProxy)]
-pub trait BlockHeaderSync {
-    fn getHeaderByHeight(
-        &self,
-        chain_id: u64,
-        height: u32,
-    ) -> ContractCall<BigUint, OptionalResult<Header>>;
-}
+mod token_op;
 
-#[elrond_wasm_derive::callable(EsdtTokenManagerProxy)]
-pub trait EsdtTokenManager {
-    fn transferEsdt(
-        &self,
-        token_identifier: TokenIdentifier,
-        amount: BigUint,
-        to: Address,
-        poly_tx_hash: H256,
-        func_name: BoxedBytes,
-        #[var_args] args: VarArgs<BoxedBytes>,
-    ) -> ContractCall<BigUint, ()>;
-}
-
-#[elrond_wasm_derive::contract(CrossChainManagementImpl)]
-pub trait CrossChainManagement {
+#[elrond_wasm_derive::contract]
+pub trait CrossChainManagement: token_op::TokenTransferModule {
     #[init]
     fn init(&self, header_sync_contract_address: Address, own_chain_id: u64) {
         self.header_sync_contract_address()
@@ -40,18 +20,11 @@ pub trait CrossChainManagement {
 
     // endpoints - owner-only
 
-    #[endpoint(setTokenManagementContractAddress)]
-    fn set_token_management_contract_address_endpoint(&self, address: Address) -> SCResult<()> {
-        only_owner!(self, "only owner may call this function");
-
-        self.token_management_contract_address().set(&address);
-
-        Ok(())
-    }
-
     #[endpoint(addTokenToWhitelist)]
     fn add_token_to_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
         only_owner!(self, "only owner may call this function");
+        self.require_local_mint_role_set(&token_id)?;
+        self.require_local_burn_role_set(&token_id)?;
 
         self.token_whitelist().insert(token_id);
 
@@ -85,52 +58,6 @@ pub trait CrossChainManagement {
         Ok(())
     }
 
-    #[endpoint(burnTokens)]
-    fn burn_tokens(&self, token_id: TokenIdentifier) -> SCResult<AsyncCall<BigUint>> {
-        only_owner!(self, "only owner may call this function");
-
-        let mut burn_amount_for_token_mapper = self.burn_amounts();
-
-        match burn_amount_for_token_mapper.get(&token_id) {
-            Some(amount) => {
-                burn_amount_for_token_mapper.remove(&token_id);
-
-                Ok(self.burn_esdt_token(&token_id, &amount))
-            }
-            None => sc_error!("token is not in burn list"),
-        }
-    }
-
-    // endpoints - token manager contract only
-
-    #[endpoint(completeTx)]
-    fn complete_tx(&self, poly_tx_hash: H256, tx_status: TransactionStatus) -> SCResult<()> {
-        require!(
-            !self.token_management_contract_address().is_empty(),
-            "token management contract address not set"
-        );
-        require!(
-            self.get_caller() == self.token_management_contract_address().get(),
-            "Only the token manager contract may call this"
-        );
-        require!(
-            !self.tx_by_hash(&poly_tx_hash).is_empty(),
-            "Transaction does not exist"
-        );
-        require!(
-            self.tx_status(&poly_tx_hash).get() == TransactionStatus::InProgress,
-            "Transaction must be processed as Pending first"
-        );
-        require!(
-            tx_status == TransactionStatus::Executed || tx_status == TransactionStatus::Rejected,
-            "Transaction status may only be set to Executed or Rejected"
-        );
-
-        self.tx_status(&poly_tx_hash).set(&tx_status);
-
-        Ok(())
-    }
-
     // endpoints - approved addresses only
 
     #[endpoint(setOffchainTxStatus)]
@@ -139,64 +66,143 @@ pub trait CrossChainManagement {
         poly_tx_hash: H256,
         tx_status: TransactionStatus,
     ) -> SCResult<()> {
-        require!(
-            self.approved_address_list().contains(&self.get_caller()),
-            "Caller is not an approved address"
-        );
-
+        self.require_caller_approved()?;
         require!(
             !self.tx_by_hash(&poly_tx_hash).is_empty(),
             "Transaction does not exist"
         );
         require!(
-            self.tx_status(&poly_tx_hash).get() == TransactionStatus::Pending,
-            "Transaction must be in Pending status"
+            self.tx_status(&poly_tx_hash).get() == TransactionStatus::InProgress,
+            "Transaction must be in InProgress status"
         );
 
-        if tx_status == TransactionStatus::Executed {
-            self.tx_status(&poly_tx_hash)
-                .set(&TransactionStatus::Executed);
-            self.add_tx_payment_to_burn_list(&poly_tx_hash);
-        } else if tx_status == TransactionStatus::Rejected {
-            self.tx_status(&poly_tx_hash)
-                .set(&TransactionStatus::Rejected);
-            self.refund_payment_for_tx(&poly_tx_hash);
-        } else {
-            return sc_error!("Transaction status may only be set to Executed or Rejected");
+        self.tx_status(&poly_tx_hash).set(&tx_status);
+
+        match tx_status {
+            TransactionStatus::Executed => {
+                self.try_burn_payment_for_tx(&poly_tx_hash)?;
+            }
+            TransactionStatus::Rejected => {
+                self.refund_payment_for_tx(&poly_tx_hash);
+            }
+            _ => return sc_error!("Transaction status may only be set to Executed or Rejected"),
         }
 
         Ok(())
     }
 
+    /// Gets pending transactions from Elrond -> other_chain
+    #[endpoint(getNextPendingCrossChainTx)]
+    fn get_next_pending_cross_chain_tx(&self) -> SCResult<Transaction> {
+        self.require_caller_approved()?;
+
+        match self.pending_cross_chain_tx_list().pop_front() {
+            Some(poly_tx_hash) => {
+                self.tx_status(&poly_tx_hash)
+                    .set(&TransactionStatus::InProgress);
+
+                Ok(self.tx_by_hash(&poly_tx_hash).get())
+            }
+            None => sc_error!("No pending transactions exist"),
+        }
+    }
+
+    /// Transactions from other_chain -> Elrond
+    #[endpoint(processCrossChainTx)]
+    fn process_cross_chain_tx(
+        &self,
+        from_chain_id: u64,
+        height: u32,
+        tx: Transaction,
+        token_id: TokenIdentifier,
+        amount: Self::BigUint,
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
+        self.require_caller_approved()?;
+        require!(
+            self.own_chain_id().get() == tx.to_chain_id,
+            "This transaction is meant for another chain"
+        );
+        require!(
+            tx.hash == self.hash_transaction(&tx),
+            "Wrong transaction hash"
+        );
+        require!(
+            self.tx_by_hash(&tx.hash).is_empty(),
+            "This transaction was already processed"
+        );
+        require!(
+            self.token_whitelist().contains(&token_id),
+            "Token is not on whitelist. Transaction rejected"
+        );
+        require!(amount > 0, "Must transfer more than 0");
+
+        let elrond_dest_address = self.try_convert_to_elrond_address(&tx.to_contract_address)?;
+        if !self.blockchain().is_smart_contract(&elrond_dest_address) && !tx.method_name.is_empty()
+        {
+            return sc_error!("Can't call function, destination is not a smart contract");
+        }
+
+        let block_header_sync_address = self.header_sync_contract_address().get();
+        let opt_header = self
+            .block_header_sync_proxy(block_header_sync_address)
+            .get_header_by_height_endpoint(from_chain_id, height)
+            .execute_on_dest_context(self.blockchain().get_gas_left());
+
+        match opt_header {
+            OptionalResult::Some(_header) => {
+                // TODO: check tx proof
+
+                self.tx_by_hash(&tx.hash).set(&tx);
+                self.tx_status(&tx.hash).set(&TransactionStatus::Pending);
+
+                // TODO: Add transactions to a list (or is fired event enough?)
+                // TODO: Decide how the tx hashes are linked to the Header
+                self.receive_tx_event(&tx);
+
+                let esdt_payment = EsdtPayment {
+                    sender: tx.from_contract_address.clone(),
+                    receiver: tx.to_contract_address.clone(),
+                    token_id,
+                    amount,
+                };
+                self.payment_for_tx(&tx.hash).set(&esdt_payment);
+
+                self.process_pending_tx(tx, esdt_payment)
+            }
+            OptionalResult::None => {
+                sc_error!("Could not find header")
+            }
+        }
+    }
+
     // endpoints
 
-    // TODO: At some point, make it so eGLD is accepted and automatically wrapped
+    /// Transactions from Elrond -> other_chain
     #[payable("*")]
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
         #[payment_token] token_identifier: TokenIdentifier,
-        #[payment] esdt_value: BigUint,
+        #[payment] esdt_value: Self::BigUint,
         to_chain_id: u64,
-        to_contract_address: Address,
+        to_contract_address: BoxedBytes,
         method_name: BoxedBytes,
         #[var_args] method_args: VarArgs<BoxedBytes>,
     ) -> SCResult<()> {
         require!(
-            !self.token_management_contract_address().is_empty(),
-            "token management contract address not set"
-        );
-        require!(
             to_chain_id != self.own_chain_id().get(),
             "Must send to a chain other than Elrond"
         );
+        require!(token_identifier.is_esdt(), "eGLD payment not allowed");
         require!(
-            !(token_identifier.is_egld() && esdt_value > 0),
-            "eGLD payment not allowed"
+            self.call_value().esdt_token_nonce() == 0,
+            "Can't transfer NFT"
         );
+        require!(esdt_value > 0, "Must transfer more than 0");
 
         let tx_id = self.cross_chain_tx_id(to_chain_id).get();
-        let from_contract_address = self.get_caller();
+        let caller = self.blockchain().get_caller();
+        let from_contract_address = BoxedBytes::from(caller.as_bytes());
         let mut tx = Transaction {
             hash: H256::zero(),
             id: tx_id,
@@ -233,97 +239,6 @@ pub trait CrossChainManagement {
         Ok(())
     }
 
-    #[endpoint(processCrossChainTx)]
-    fn process_cross_chain_tx(
-        &self,
-        from_chain_id: u64,
-        height: u32,
-        tx: Transaction,
-        token_identifier: TokenIdentifier,
-        amount: BigUint,
-    ) -> SCResult<()> {
-        require!(
-            !self.token_management_contract_address().is_empty(),
-            "token management contract address not set"
-        );
-        require!(
-            self.own_chain_id().get() == tx.to_chain_id,
-            "This transaction is meant for another chain"
-        );
-        require!(
-            tx.hash == self.hash_transaction(&tx),
-            "Wrong transaction hash"
-        );
-        require!(
-            self.tx_by_hash(&tx.hash).is_empty(),
-            "This transaction was already processed"
-        );
-        if !self.is_smart_contract(&tx.to_contract_address) && !tx.method_name.is_empty() {
-            return sc_error!("Can't call function, destination is not a smart contract");
-        }
-        if token_identifier.is_esdt() && amount > 0 {
-            require!(
-                self.token_whitelist().contains(&token_identifier),
-                "Token is not on whitelist. Transaction rejected"
-            );
-        }
-
-        let block_header_sync_address = self.header_sync_contract_address().get();
-        let contract_call = contract_call!(self, block_header_sync_address, BlockHeaderSyncProxy);
-
-        let opt_header = contract_call
-            .getHeaderByHeight(from_chain_id, height)
-            .execute_on_dest_context(self.get_gas_left(), self.send());
-
-        match opt_header {
-            OptionalResult::Some(_header) => {
-                // TODO: check tx proof
-
-                self.tx_by_hash(&tx.hash).set(&tx);
-                self.tx_status(&tx.hash).set(&TransactionStatus::Pending);
-
-                // TODO: Add transactions to a list (or is fired event enough?)
-                // TODO: Decide how the tx hashes are linked to the Header
-
-                self.receive_tx_event(&tx);
-
-                let esdt_payment = if token_identifier.is_esdt() && amount > 0 {
-                    EsdtPayment {
-                        sender: tx.from_contract_address.clone(),
-                        receiver: tx.to_contract_address.clone(),
-                        token_id: token_identifier,
-                        amount,
-                    }
-                } else {
-                    EsdtPayment {
-                        sender: tx.from_contract_address.clone(),
-                        receiver: tx.to_contract_address.clone(),
-                        token_id: TokenIdentifier::egld(),
-                        amount: BigUint::zero(),
-                    }
-                };
-
-                self.payment_for_tx(&tx.hash).set(&esdt_payment);
-
-                // Process transaction
-                self.process_pending_tx(tx, esdt_payment);
-
-                Ok(())
-            }
-            OptionalResult::None => {
-                sc_error!("Could not find header")
-            }
-        }
-    }
-
-    #[endpoint(getNextPendingCrossChainTx)]
-    fn get_next_pending_cross_chain_tx(&self) -> OptionalResult<Transaction> {
-        match self.pending_cross_chain_tx_list().pop_front() {
-            Some(poly_tx_hash) => OptionalResult::Some(self.tx_by_hash(&poly_tx_hash).get()),
-            None => OptionalResult::None,
-        }
-    }
-
     // views
 
     #[view(getTxByHash)]
@@ -335,78 +250,48 @@ pub trait CrossChainManagement {
         }
     }
 
-    #[view(getBurnTokensList)]
-    fn get_burn_tokens_list(&self) -> MultiResultVec<TokenIdentifier> {
-        let mut token_list = Vec::new();
-
-        for token_identifier in self.burn_amounts().keys() {
-            token_list.push(token_identifier);
-        }
-
-        token_list.into()
-    }
-
     // private
 
-    fn process_pending_tx(&self, tx: Transaction, esdt_payment: EsdtPayment<BigUint>) {
-        let token_management_contract_address = self.token_management_contract_address().get();
-
+    fn process_pending_tx(
+        &self,
+        tx: Transaction,
+        esdt_payment: EsdtPayment<Self::BigUint>,
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
         self.tx_status(&tx.hash).set(&TransactionStatus::InProgress);
 
-        contract_call!(
-            self,
-            token_management_contract_address,
-            EsdtTokenManagerProxy
-        )
-        .transferEsdt(
-            esdt_payment.token_id,
-            esdt_payment.amount,
-            tx.to_contract_address,
-            tx.hash.clone(),
-            tx.method_name,
-            VarArgs::from(tx.method_args),
-        )
-        .execute_on_dest_context(self.get_gas_left(), self.send());
-
-        // If tx destination is a simple account, this will execute immediately
-        // (Most transfers should be simple transfer between accounts, and not scCalls)
-        // otherwise, the status will be set accordingly by the result of the async call
-        // The EsdtTokenManager will call this contract in its callback and set the status
-        // This is done through the complete_tx endpoint
-        self.tx_status(&tx.hash).set(&TransactionStatus::Executed);
+        let elrond_dest_address = self.try_convert_to_elrond_address(&tx.to_contract_address)?;
+        if self.blockchain().is_smart_contract(&elrond_dest_address) {
+            Ok(self
+                .sc_async_transfer_esdt(
+                    elrond_dest_address,
+                    esdt_payment.token_id,
+                    esdt_payment.amount,
+                    tx.method_name,
+                    &tx.method_args,
+                )
+                .with_callback(self.callbacks().async_transfer_callback(tx.hash)))
+        } else {
+            Ok(self
+                .account_async_transfer_esdt(
+                    elrond_dest_address,
+                    esdt_payment.token_id,
+                    esdt_payment.amount,
+                )
+                .with_callback(self.callbacks().async_transfer_callback(tx.hash)))
+        }
     }
 
     fn hash_transaction(&self, tx: &Transaction) -> H256 {
-        self.sha256(tx.get_partial_serialized().as_slice())
+        self.crypto().sha256(tx.get_partial_serialized().as_slice())
     }
 
-    fn add_tx_payment_to_burn_list(&self, poly_tx_hash: &H256) {
-        if self.payment_for_tx(poly_tx_hash).is_empty() {
-            return;
-        }
+    fn try_convert_to_elrond_address(&self, address: &BoxedBytes) -> SCResult<Address> {
+        require!(
+            address.len() == Address::len_bytes(),
+            "Wrong address format, it should be exactly 32 bytes"
+        );
 
-        let esdt_payment = self.payment_for_tx(poly_tx_hash).get();
-
-        let mut current_burn_amount = match self.burn_amounts().get(&esdt_payment.token_id) {
-            Some(amount) => amount,
-            None => BigUint::zero(),
-        };
-        current_burn_amount += esdt_payment.amount;
-
-        self.burn_amounts()
-            .insert(esdt_payment.token_id, current_burn_amount);
-
-        self.payment_for_tx(poly_tx_hash).clear();
-    }
-
-    fn burn_esdt_token(
-        &self,
-        token_identifier: &TokenIdentifier,
-        amount: &BigUint,
-    ) -> AsyncCall<BigUint> {
-        ESDTSystemSmartContractProxy::new()
-            .burn(token_identifier.as_esdt_identifier(), amount)
-            .async_call()
+        Ok(Address::from_slice(address.as_slice()))
     }
 
     fn refund_payment_for_tx(&self, poly_tx_hash: &H256) {
@@ -416,21 +301,72 @@ pub trait CrossChainManagement {
 
         let payment = self.payment_for_tx(poly_tx_hash).get();
 
-        self.send().direct_esdt_via_async_call(
-            &payment.sender,
-            payment.token_id.as_esdt_identifier(),
-            &payment.amount,
-            self.data_or_empty(&payment.sender, b"refund"),
-        );
+        // this should never fail, but calling unwrap directly adds a lot of wasm bloat
+        // so we check anyway
+        if let Ok(elrond_dest_address) = self.try_convert_to_elrond_address(&payment.sender) {
+            let _ = self.transfer_esdt(
+                &elrond_dest_address,
+                &payment.token_id,
+                &payment.amount,
+                self.data_or_empty(&elrond_dest_address, b"refund"),
+            );
+        }
+    }
+
+    fn try_burn_payment_for_tx(&self, poly_tx_hash: &H256) -> SCResult<()> {
+        if self.payment_for_tx(poly_tx_hash).is_empty() {
+            return Ok(());
+        }
+
+        let payment = self.payment_for_tx(poly_tx_hash).get();
+        self.try_burn(&payment.token_id, &payment.amount)?;
+
+        Ok(())
     }
 
     fn data_or_empty(&self, to: &Address, data: &'static [u8]) -> &[u8] {
-        if self.is_smart_contract(to) {
+        if self.blockchain().is_smart_contract(to) {
             &[]
         } else {
             data
         }
     }
+
+    fn require_caller_approved(&self) -> SCResult<()> {
+        let caller = self.blockchain().get_caller();
+        require!(
+            self.approved_address_list().contains(&caller),
+            "Caller is not an approved address"
+        );
+
+        Ok(())
+    }
+
+    // callbacks
+
+    #[callback]
+    fn async_transfer_callback(
+        &self,
+        poly_tx_hash: H256,
+        #[call_result] result: AsyncCallResult<()>,
+    ) {
+        match result {
+            AsyncCallResult::Ok(()) => self
+                .tx_status(&poly_tx_hash)
+                .set(&TransactionStatus::Executed),
+            AsyncCallResult::Err(_) => self
+                .tx_status(&poly_tx_hash)
+                .set(&TransactionStatus::Rejected),
+        }
+    }
+
+    // proxies
+
+    #[proxy]
+    fn block_header_sync_proxy(
+        &self,
+        sc_address: Address,
+    ) -> block_header_sync::Proxy<Self::SendApi>;
 
     // events
 
@@ -442,67 +378,44 @@ pub trait CrossChainManagement {
     #[event("receiveTransaction")]
     fn receive_tx_event(&self, tx: &Transaction);
 
-    // header sync contract address
+    // storage
 
     #[storage_mapper("headerSyncContractAddress")]
     fn header_sync_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
-
-    // Token management contract. Currently, this is the esdt contract
-
-    #[storage_mapper("tokenManagementContractAddress")]
-    fn token_management_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
-
-    // payment for a specific transaction - (token_identifier, amount) pair
 
     #[view(getPaymentForTx)]
     #[storage_mapper("paymentForTx")]
     fn payment_for_tx(
         &self,
         poly_tx_hash: &H256,
-    ) -> SingleValueMapper<Self::Storage, EsdtPayment<BigUint>>;
-
-    // burn amounts for tokens
-    // To save gas, we only burn from time to time instead of burning for each successfully executed tx
-
-    #[storage_mapper("burnAmounts")]
-    fn burn_amounts(&self) -> MapMapper<Self::Storage, TokenIdentifier, BigUint>;
-
-    // own chain id
+    ) -> SingleValueMapper<Self::Storage, EsdtPayment<Self::BigUint>>;
 
     #[view(getOwnChainId)]
     #[storage_mapper("ownChainId")]
     fn own_chain_id(&self) -> SingleValueMapper<Self::Storage, u64>;
 
-    // cross chain tx id
-
     #[view(getCrossChainTxId)]
     #[storage_mapper("crossChainTxId")]
     fn cross_chain_tx_id(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u64>;
-
-    // tx by hash
 
     #[storage_mapper("txByHash")]
     fn tx_by_hash(&self, poly_tx_hash: &H256) -> SingleValueMapper<Self::Storage, Transaction>;
 
     // list of hashes for pending tx from elrond to another chain
-
     #[storage_mapper("pendingCrosschainTxList")]
     fn pending_cross_chain_tx_list(&self) -> LinkedListMapper<Self::Storage, H256>;
-
-    // transaction status
 
     #[view(getTxStatus)]
     #[storage_mapper("txStatus")]
     fn tx_status(&self, poly_tx_hash: &H256)
         -> SingleValueMapper<Self::Storage, TransactionStatus>;
 
-    // Token whitelist
-
     #[storage_mapper("tokenWhitelist")]
     fn token_whitelist(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
 
-    // Approved address list - These addresses can mark transactions as executed/rejected and trigger a burn/refund respectively
-
+    // Approved address list - These addresses can mark transactions as executed/rejected
+    // which triggers a burn/refund respectively
+    // Only for Elrond -> other_chain transactions
     #[storage_mapper("approvedAddressList")]
     fn approved_address_list(&self) -> SetMapper<Self::Storage, Address>;
 }

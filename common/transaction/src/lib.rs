@@ -1,6 +1,6 @@
 #![no_std]
 
-use elrond_wasm::types::{Address, BoxedBytes, H256};
+use elrond_wasm::types::{BoxedBytes, H256};
 use elrond_wasm::elrond_codec::*;
 
 use zero_copy_sink::*;
@@ -17,13 +17,14 @@ pub enum TransactionStatus {
 	Rejected,
 }
 
+// Not using the built-in Address type for addresses, as not all chains have 32-byte addresses
 #[derive(TypeAbi)]
 pub struct Transaction {
 	pub hash: H256,
 	pub id: u64,
-	pub from_contract_address: Address,
+	pub from_contract_address: BoxedBytes,
 	pub to_chain_id: u64,
-	pub to_contract_address: Address,
+	pub to_contract_address: BoxedBytes,
 	pub method_name: BoxedBytes,
 	pub method_args: Vec<BoxedBytes>,
 }
@@ -40,9 +41,9 @@ impl Transaction {
 		let mut sink = ZeroCopySink::new();
 
 		sink.write_u64(self.id);
-		sink.write_address(&self.from_contract_address);
+		sink.write_var_bytes(self.from_contract_address.as_slice());
 		sink.write_u64(self.to_chain_id);
-		sink.write_address(&self.to_contract_address);
+		sink.write_var_bytes(self.to_contract_address.as_slice());
 		sink.write_var_bytes(self.method_name.as_slice());
 
 		sink.write_var_uint(self.method_args.len() as u64);
@@ -90,7 +91,7 @@ impl NestedDecode for Transaction {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_address() {
+		match source.next_var_bytes() {
 			Some(val) => from_contract_address = val,
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
@@ -100,7 +101,7 @@ impl NestedDecode for Transaction {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_address() {
+		match source.next_var_bytes() {
 			Some(val) => to_contract_address = val,
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};

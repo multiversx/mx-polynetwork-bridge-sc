@@ -17,18 +17,15 @@ path = "BlockHeaderSync"
 [dependencies.cross-chain-management]
 path = "CrossChainManagement"
 
-[dependencies.esdt-token-manager]
-path = "EsdtTokenManager"
-
 [dependencies.elrond-wasm]
-version = "0.14.2"
+version = "0.16.2"
 
 [dependencies.elrond-wasm-derive]
-version = "0.14.2"
+version = "0.16.2"
 
 [dependencies.elrond-wasm-node]
-version = "0.14.2"
+version = "0.16.2"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.14.2"
+version = "0.16.2"
