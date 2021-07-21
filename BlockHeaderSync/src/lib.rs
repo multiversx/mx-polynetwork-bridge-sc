@@ -268,6 +268,7 @@ pub trait BlockHeaderSync {
     #[storage_mapper("currentHeight")]
     fn current_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
 
+    #[view(getConsensusPeers)]
     #[storage_mapper("consensusPeers")]
     fn consensus_peers(
         &self,
