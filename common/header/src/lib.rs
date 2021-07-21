@@ -14,8 +14,6 @@ pub mod chain_config;
 pub mod peer_config;
 pub mod vbft_block_info;
 
-const EPOCH_CHANGE_HEIGHT: u32 = 60_000;
-
 elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi, Debug, PartialEq)]
@@ -107,7 +105,7 @@ impl Header {
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
-        let has_new_chain_config = height % EPOCH_CHANGE_HEIGHT == 0;
+        let has_new_chain_config = height % POLYCHAIN_EPOCH_HEIGHT == 0;
         match VbftBlockInfo::decode_from_source(source, has_new_chain_config) {
             Ok(bi) => consensus_payload = bi,
             Err(err) => return Err(err),
