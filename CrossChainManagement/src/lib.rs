@@ -2,7 +2,6 @@
 #![allow(non_snake_case)]
 
 use esdt_payment::*;
-use header::*;
 use transaction::*;
 
 elrond_wasm::imports!();

@@ -23,10 +23,6 @@ pub trait BlockHeaderSync {
             self.genesis_header().is_empty(),
             "Genesis header already set!"
         );
-        require!(
-            !header.consensus_payload.is_some(),
-            "Invalid genesis header!"
-        );
 
         self.try_update_consensus_peer(&header)?;
         self.genesis_header().set(&header);
@@ -116,22 +112,20 @@ pub trait BlockHeaderSync {
     // private
 
     fn try_update_consensus_peer(&self, header: &Header) -> SCResult<()> {
-        if let Some(consensus_payload) = &header.consensus_payload {
-            if let Some(chain_config) = &consensus_payload.new_chain_config {
-                let chain_id = header.chain_id;
-                let height = header.height;
+        if let Some(chain_config) = &header.consensus_payload.new_chain_config {
+            let chain_id = header.chain_id;
+            let height = header.height;
 
-                // update key heights
-                self.key_height_list(chain_id).push_back(height);
+            // update key heights
+            self.key_height_list(chain_id).push_back(height);
 
-                // update consensus peer list
-                require!(
-                    !chain_config.peers.is_empty(),
-                    "Consensus peer list is empty!"
-                );
-                self.consensus_peers(chain_id, height)
-                    .set(&chain_config.peers);
-            }
+            // update consensus peer list
+            require!(
+                !chain_config.peers.is_empty(),
+                "Consensus peer list is empty!"
+            );
+            self.consensus_peers(chain_id, height)
+                .set(&chain_config.peers);
         }
 
         Ok(())
