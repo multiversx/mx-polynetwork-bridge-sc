@@ -19,75 +19,49 @@ pub trait BlockHeaderSync {
 
     #[endpoint(syncGenesisHeader)]
     fn sync_genesis_header(&self, header: Header) -> SCResult<()> {
+        only_owner!(self, "Only owner can sync genesis header");
         require!(
-            self.genesis_header().is_empty(),
-            "Genesis header already set!"
+            self.consensus_peers(header.chain_id).is_empty(),
+            "Genesis header already set"
         );
 
         self.try_update_consensus_peer(&header)?;
-        self.genesis_header().set(&header);
-        self.store_header(&header);
-
         self.block_header_sync_event(&header);
 
         Ok(())
     }
 
     #[endpoint(syncBlockHeader)]
-    fn sync_block_header(&self, header: Header) -> SCResult<()> {
-        if self
-            .header_by_height(header.chain_id, header.height)
-            .is_empty()
-        {
-            match self.verify_header(&header) {
-                Ok(()) => {}
-                Err(err) => return Err(err),
-            };
+    fn sync_block_header(
+        &self,
+        header: Header,
+        header_hash: H256,
+        book_keepers: Vec<PublicKey>,
+        sig_data: Vec<Signature>,
+    ) -> SCResult<()> {
+        require!(
+            !self.consensus_peers(header.chain_id).is_empty(),
+            "Must set genesis header first"
+        );
 
-            self.try_update_consensus_peer(&header)?;
-            self.store_header(&header);
-            self.block_header_sync_event(&header);
-        }
+        self.verify_header(&header, &header_hash, &book_keepers, &sig_data)?;
+        self.try_update_consensus_peer(&header)?;
+        self.block_header_sync_event(&header);
 
-        // if block exists already, no sync needed
         Ok(())
     }
 
-    #[view(getHeaderByHeight)]
-    fn get_header_by_height_endpoint(&self, chain_id: u64, height: u32) -> OptionalResult<Header> {
-        if !self.header_by_height(chain_id, height).is_empty() {
-            OptionalResult::Some(self.header_by_height(chain_id, height).get())
-        } else {
-            OptionalResult::None
-        }
-    }
-
-    #[view(getHeaderByHash)]
-    fn get_header_by_hash_endpoint(&self, chain_id: u64, hash: &H256) -> OptionalResult<Header> {
-        if !self.header_by_hash(chain_id, hash).is_empty() {
-            OptionalResult::Some(self.header_by_hash(chain_id, hash).get())
-        } else {
-            OptionalResult::None
-        }
-    }
-
     #[endpoint(verifyHeader)]
-    fn verify_header(&self, header: &Header) -> SCResult<()> {
-        let chain_id = header.chain_id;
-        let height = header.height;
+    fn verify_header(
+        &self,
+        header: &Header,
+        header_hash: &H256,
+        book_keepers: &[PublicKey],
+        sig_data: &[Signature],
+    ) -> SCResult<()> {
+        let prev_consensus = self.consensus_peers(header.chain_id).get();
 
-        let key_height = match self.find_key_height(chain_id, height) {
-            Some(k) => k,
-            None => return sc_error!("Couldn't find key height!"),
-        };
-        let prev_consensus = self.consensus_peers(chain_id, key_height).get();
-
-        require!(
-            header.book_keepers.len() > prev_consensus.len() * 2 / 3,
-            "Header bookkeepers num must be > 2/3 of consensus num"
-        );
-
-        for bk in &header.book_keepers {
+        for bk in book_keepers {
             let mut serialized_key = Vec::new();
             let _ = bk.dep_encode(&mut serialized_key);
             let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
@@ -99,13 +73,11 @@ pub trait BlockHeaderSync {
             );
         }
 
-        let hashed_header = BoxedBytes::from(self.hash_header(header).as_bytes());
-
         self.verify_multi_signature(
-            &hashed_header,
-            &header.book_keepers,
-            header.book_keepers.len(),
-            &header.sig_data,
+            &header_hash.as_bytes().into(),
+            &book_keepers,
+            2 * prev_consensus.len() / 3,
+            &sig_data,
         )
     }
 
@@ -113,59 +85,15 @@ pub trait BlockHeaderSync {
 
     fn try_update_consensus_peer(&self, header: &Header) -> SCResult<()> {
         if let Some(chain_config) = &header.consensus_payload.new_chain_config {
-            let chain_id = header.chain_id;
-            let height = header.height;
-
-            // update key heights
-            self.key_height_list(chain_id).push_back(height);
-
-            // update consensus peer list
             require!(
                 !chain_config.peers.is_empty(),
                 "Consensus peer list is empty!"
             );
-            self.consensus_peers(chain_id, height)
+            self.consensus_peers(header.chain_id)
                 .set(&chain_config.peers);
         }
 
         Ok(())
-    }
-
-    // header-related
-
-    /// hashed twice, for some reason
-    fn hash_header(&self, header: &Header) -> H256 {
-        self.crypto().sha256(
-            self.crypto()
-                .sha256(header.get_partial_serialized().as_slice())
-                .as_bytes(),
-        )
-    }
-
-    fn store_header(&self, header: &Header) {
-        self.header_by_hash(header.chain_id, &header.block_hash)
-            .set(header);
-        self.header_by_height(header.chain_id, header.height)
-            .set(header);
-        self.current_height(header.chain_id).set(&header.height);
-    }
-
-    // verification-related
-
-    /// _height_ should not be lower than current max (which should be the last element).
-    /// If the list is empty (i.e. None is returned from last()),  
-    /// then it means genesis header was not initialized
-    fn find_key_height(&self, chain_id: u64, height: u32) -> Option<u32> {
-        match self.key_height_list(chain_id).back() {
-            Some(last_key_height) => {
-                if last_key_height > height {
-                    None
-                } else {
-                    Some(last_key_height)
-                }
-            }
-            None => None,
-        }
     }
 
     fn verify(&self, public_key: &PublicKey, data: &BoxedBytes, signature: &Signature) -> bool {
@@ -247,35 +175,7 @@ pub trait BlockHeaderSync {
 
     // storage
 
-    #[storage_mapper("genesisHeader")]
-    fn genesis_header(&self) -> SingleValueMapper<Self::Storage, Header>;
-
-    #[storage_mapper("headerByHash")]
-    fn header_by_hash(
-        &self,
-        chain_id: u64,
-        hash: &H256,
-    ) -> SingleValueMapper<Self::Storage, Header>;
-
-    #[storage_mapper("headerByHeight")]
-    fn header_by_height(
-        &self,
-        chain_id: u64,
-        height: u32,
-    ) -> SingleValueMapper<Self::Storage, Header>;
-
-    #[view(getCurrentHeight)]
-    #[storage_mapper("currentHeight")]
-    fn current_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
-
     #[view(getConsensusPeers)]
     #[storage_mapper("consensusPeers")]
-    fn consensus_peers(
-        &self,
-        chain_id: u64,
-        height: u32,
-    ) -> SingleValueMapper<Self::Storage, Vec<PeerConfig>>;
-
-    #[storage_mapper("keyHeightList")]
-    fn key_height_list(&self, chain_id: u64) -> LinkedListMapper<Self::Storage, u32>;
+    fn consensus_peers(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, Vec<PeerConfig>>;
 }

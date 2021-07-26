@@ -70,7 +70,7 @@ impl ChainConfig {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_var_uint() {
+		match source.next_u64() {
 			Some(len) => {
 				for _ in 0..len {
 					match PeerConfig::decode_from_source(source) {
@@ -82,7 +82,7 @@ impl ChainConfig {
 			None => return Err(DecodeError::INPUT_TOO_SHORT)
 		};
 
-		match source.next_var_uint() {
+		match source.next_u64() {
 			Some(len) => {
 				for _ in 0..len {
 					match source.next_u32() {
