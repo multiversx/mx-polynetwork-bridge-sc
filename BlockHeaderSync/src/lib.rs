@@ -75,9 +75,9 @@ pub trait BlockHeaderSync {
 
         self.verify_multi_signature(
             &header_hash.as_bytes().into(),
-            &book_keepers,
+            book_keepers,
             2 * prev_consensus.len() / 3,
-            &sig_data,
+            sig_data,
         )
     }
 
