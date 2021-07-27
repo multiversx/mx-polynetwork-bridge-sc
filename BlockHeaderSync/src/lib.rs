@@ -51,7 +51,8 @@ pub trait BlockHeaderSync {
         Ok(())
     }
 
-    #[endpoint(verifyHeader)]
+    // private
+
     fn verify_header(
         &self,
         header: &Header,
@@ -80,8 +81,6 @@ pub trait BlockHeaderSync {
             sig_data,
         )
     }
-
-    // private
 
     fn try_update_consensus_peer(&self, header: &Header) -> SCResult<()> {
         if let Some(chain_config) = &header.consensus_payload.new_chain_config {
