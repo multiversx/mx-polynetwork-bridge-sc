@@ -101,38 +101,11 @@ pub trait BlockHeaderSync {
             return false;
         }
 
-        match public_key.algorithm {
-            EllipticCurveAlgorithm::ECDSA => {
-                match signature.scheme {
-                    SignatureScheme::SM3withSM2 => {
-                        // not implemented for DSA signature yet
-
-                        self.crypto().verify_secp256k1(
-                            public_key.value_as_slice(),
-                            data.as_slice(),
-                            signature.value_as_slice(),
-                        )
-                    }
-                    SignatureScheme::Unknown => false,
-                    _ => {
-                        // not implemented yet
-                        false
-                    }
-                }
-            }
-            EllipticCurveAlgorithm::SM2 => {
-                if signature.scheme == SignatureScheme::SHA512withEDDSA {
-                    self.crypto().verify_ed25519(
-                        public_key.value_as_slice(),
-                        data.as_slice(),
-                        signature.value_as_slice(),
-                    )
-                } else {
-                    false
-                }
-            }
-            EllipticCurveAlgorithm::Unknown => false,
-        }
+        self.crypto().verify_secp256k1(
+            public_key.value_as_slice(),
+            data.as_slice(),
+            signature.value_as_slice(),
+        )
     }
 
     fn verify_multi_signature(
