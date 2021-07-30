@@ -38,19 +38,17 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         Ok(())
     }
 
+    #[only_owner]
     #[endpoint(addAddressToApprovedlist)]
     fn add_address_to_approved_list(&self, approved_address: Address) -> SCResult<()> {
-        only_owner!(self, "only owner may call this function");
-
         self.approved_address_list().insert(approved_address);
 
         Ok(())
     }
 
+    #[only_owner]
     #[endpoint(removeAddressFromApprovedlist)]
     fn remove_address_from_approved_list(&self, approved_address: Address) -> SCResult<()> {
-        only_owner!(self, "only owner may call this function");
-
         self.approved_address_list().remove(&approved_address);
 
         Ok(())
