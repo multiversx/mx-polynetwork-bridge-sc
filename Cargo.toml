@@ -18,14 +18,14 @@ path = "BlockHeaderSync"
 path = "CrossChainManagement"
 
 [dependencies.elrond-wasm]
-version = "0.16.2"
+version = "0.18"
 
 [dependencies.elrond-wasm-derive]
-version = "0.16.2"
+version = "0.18"
 
 [dependencies.elrond-wasm-node]
-version = "0.16.2"
+version = "0.18"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.16.2"
+version = "0.18"

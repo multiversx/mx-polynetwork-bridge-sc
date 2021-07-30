@@ -40,40 +40,25 @@ pub trait TokenTransferModule {
         amount: &Self::BigUint,
         data: &[u8],
     ) {
-        let _ = self.send().direct_esdt_via_transf_exec(
-            dest,
-            token_id.as_esdt_identifier(),
-            amount,
-            data,
-        );
+        self.send().direct(dest, token_id, 0, amount, data);
     }
 
     fn try_mint(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
         self.require_local_mint_role_set(&token_id)?;
-        self.send().esdt_local_mint(
-            self.blockchain().get_gas_left(),
-            token_id.as_esdt_identifier(),
-            amount,
-        );
+        self.send().esdt_local_mint(token_id, 0, amount);
 
         Ok(())
     }
 
     fn try_burn(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
         self.require_local_burn_role_set(&token_id)?;
-        self.send().esdt_local_burn(
-            self.blockchain().get_gas_left(),
-            token_id.as_esdt_identifier(),
-            amount,
-        );
+        self.send().esdt_local_burn(token_id, 0, amount);
 
         Ok(())
     }
 
     fn require_local_mint_role_set(&self, token_id: &TokenIdentifier) -> SCResult<()> {
-        let roles = self
-            .blockchain()
-            .get_esdt_local_roles(token_id.as_esdt_identifier());
+        let roles = self.blockchain().get_esdt_local_roles(token_id);
 
         require!(
             roles.contains(&EsdtLocalRole::Mint),
@@ -84,9 +69,7 @@ pub trait TokenTransferModule {
     }
 
     fn require_local_burn_role_set(&self, token_id: &TokenIdentifier) -> SCResult<()> {
-        let roles = self
-            .blockchain()
-            .get_esdt_local_roles(token_id.as_esdt_identifier());
+        let roles = self.blockchain().get_esdt_local_roles(token_id);
 
         require!(
             roles.contains(&EsdtLocalRole::Burn),

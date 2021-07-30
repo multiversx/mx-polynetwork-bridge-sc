@@ -19,9 +19,9 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
 
     // endpoints - owner-only
 
+    #[only_owner]
     #[endpoint(addTokenToWhitelist)]
     fn add_token_to_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        only_owner!(self, "only owner may call this function");
         self.require_local_mint_role_set(&token_id)?;
         self.require_local_burn_role_set(&token_id)?;
 
@@ -30,10 +30,9 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         Ok(())
     }
 
+    #[only_owner]
     #[endpoint(removeTokenFromWhitelist)]
     fn remove_token_from_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        only_owner!(self, "only owner may call this function");
-
         self.token_whitelist().remove(&token_id);
 
         Ok(())
@@ -110,8 +109,8 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
     #[endpoint(processCrossChainTx)]
     fn process_cross_chain_tx(
         &self,
-        from_chain_id: u64,
-        height: u32,
+        _from_chain_id: u64,
+        _height: u32,
         tx: Transaction,
         token_id: TokenIdentifier,
         amount: Self::BigUint,
@@ -140,6 +139,10 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         {
             return sc_error!("Can't call function, destination is not a smart contract");
         }
+
+        sc_error!("Could not find header")
+
+        /* TODO: Figure out connection between Headers and Transactions
 
         let block_header_sync_address = self.header_sync_contract_address().get();
         let opt_header = self
@@ -172,6 +175,7 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
                 sc_error!("Could not find header")
             }
         }
+        */
     }
 
     // endpoints

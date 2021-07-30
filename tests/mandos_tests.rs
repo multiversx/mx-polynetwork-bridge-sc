@@ -22,7 +22,7 @@ fn contract_map() -> ContractMap<TxContext> {
 
 #[test]
 fn deploy() {
-	parse_execute_mandos(
+	elrond_wasm_debug::mandos_rs(
 		"mandos/deploy.scen.json",
 		&contract_map(),
 	);

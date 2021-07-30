@@ -17,9 +17,9 @@ pub trait BlockHeaderSync {
 
     // endpoints
 
+    #[only_owner]
     #[endpoint(syncGenesisHeader)]
     fn sync_genesis_header(&self, header: Header) -> SCResult<()> {
-        only_owner!(self, "Only owner can sync genesis header");
         require!(
             self.consensus_peers(header.chain_id).is_empty(),
             "Genesis header already set"
