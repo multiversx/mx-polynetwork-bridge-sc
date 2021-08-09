@@ -5,7 +5,7 @@ use elrond_wasm::types::Box;
 
 elrond_wasm::derive_imports!();
 
-const SIGNATURE_LENGTH: usize = 67;
+const SIGNATURE_LENGTH: usize = 70;
 
 #[derive(TypeAbi, PartialEq)]
 pub struct Signature(Box<[u8; SIGNATURE_LENGTH]>);

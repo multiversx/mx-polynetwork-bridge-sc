@@ -3,7 +3,6 @@
 use elrond_wasm::elrond_codec::*;
 use elrond_wasm::types::{BoxedBytes, H256};
 
-use util::*;
 use vbft_block_info::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
@@ -32,11 +31,8 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn is_start_of_epoch(&self) -> bool {
-        self.height % POLYCHAIN_EPOCH_HEIGHT == 0
-    }
-
     pub fn decode_from_source(source: &mut ZeroCopySource) -> Result<Self, DecodeError> {
+        let is_start_of_epoch;
         let version;
         let chain_id;
         let prev_block_hash;
@@ -48,6 +44,11 @@ impl Header {
         let consensus_data;
         let consensus_payload;
         let next_book_keeper;
+
+        match source.next_bool() {
+            Some(val) => is_start_of_epoch = val,
+            None => return Err(DecodeError::INPUT_TOO_SHORT),
+        };
 
         match source.next_u32() {
             Some(val) => version = val,
@@ -97,8 +98,7 @@ impl Header {
         // ignore payload byte length
         let _ = source.next_var_uint();
 
-        let has_new_chain_config = height % POLYCHAIN_EPOCH_HEIGHT == 0;
-        match VbftBlockInfo::decode_from_source(source, has_new_chain_config) {
+        match VbftBlockInfo::decode_from_source(source, is_start_of_epoch) {
             Ok(bi) => consensus_payload = bi,
             Err(err) => return Err(err),
         }

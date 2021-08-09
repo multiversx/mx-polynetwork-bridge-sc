@@ -51,6 +51,15 @@ pub trait BlockHeaderSync {
         Ok(())
     }
 
+    #[view(getPubkeyId)]
+    fn get_pubkey_id(&self, public_key: PublicKey) -> BoxedBytes {
+        let mut serialized_key = Vec::new();
+        let _ = public_key.dep_encode(&mut serialized_key);
+        let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
+
+        key_id
+    }
+
     // private
 
     fn verify_header(

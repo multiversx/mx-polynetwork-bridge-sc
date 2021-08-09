@@ -57,13 +57,13 @@ impl VbftBlockInfo {
             new_chain_config = None;
         }
 
-        return Ok(VbftBlockInfo {
+        Ok(VbftBlockInfo {
             proposer,
             vrf_value,
             vrf_proof,
             last_config_block_num,
             new_chain_config,
-        });
+        })
     }
 }
 
