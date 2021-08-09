@@ -1,4 +1,4 @@
-
+/*
 extern crate block_header_sync;
 use block_header_sync::*;
 use elrond_wasm::*;
@@ -16,3 +16,4 @@ fn contract_map() -> ContractMap<TxContext> {
 fn test_mandos() {
     parse_execute_mandos("mandos/.scen.json", &contract_map());
 }
+*/

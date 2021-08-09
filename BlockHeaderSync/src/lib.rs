@@ -1,10 +1,6 @@
 #![no_std]
 
-use header::peer_config::*;
 use header::*;
-
-use util::*;
-
 use public_key::*;
 use signature::*;
 
@@ -19,13 +15,13 @@ pub trait BlockHeaderSync {
 
     #[only_owner]
     #[endpoint(syncGenesisHeader)]
-    fn sync_genesis_header(&self, header: Header) -> SCResult<()> {
+    fn sync_genesis_header(&self, header: Header, book_keepers: Vec<PublicKey>) -> SCResult<()> {
         require!(
             self.consensus_peers(header.chain_id).is_empty(),
             "Genesis header already set"
         );
 
-        self.try_update_consensus_peer(&header)?;
+        self.consensus_peers(header.chain_id).set(&book_keepers);
         self.block_header_sync_event(&header);
 
         Ok(())
@@ -44,20 +40,11 @@ pub trait BlockHeaderSync {
             "Must set genesis header first"
         );
 
-        self.verify_header(&header, &header_hash, &book_keepers, &sig_data)?;
-        self.try_update_consensus_peer(&header)?;
+        self.verify_header(&header, &header_hash, &sig_data)?;
+        self.consensus_peers(header.chain_id).set(&book_keepers);
         self.block_header_sync_event(&header);
 
         Ok(())
-    }
-
-    #[view(getPubkeyId)]
-    fn get_pubkey_id(&self, public_key: PublicKey) -> BoxedBytes {
-        let mut serialized_key = Vec::new();
-        let _ = public_key.dep_encode(&mut serialized_key);
-        let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
-
-        key_id
     }
 
     // private
@@ -66,42 +53,17 @@ pub trait BlockHeaderSync {
         &self,
         header: &Header,
         header_hash: &H256,
-        book_keepers: &[PublicKey],
         sig_data: &[Signature],
     ) -> SCResult<()> {
         let prev_consensus = self.consensus_peers(header.chain_id).get();
-
-        for bk in book_keepers {
-            let mut serialized_key = Vec::new();
-            let _ = bk.dep_encode(&mut serialized_key);
-            let key_id = hex_converter::byte_slice_to_hex(&serialized_key);
-
-            // if key doesn't exist, something is wrong
-            require!(
-                prev_consensus.iter().any(|p| p.id == key_id),
-                "Invalid pubkey!"
-            );
-        }
+        let min_sigs = self.get_min_signatures(prev_consensus.len());
 
         self.verify_multi_signature(
             &header_hash.as_bytes().into(),
-            book_keepers,
-            2 * prev_consensus.len() / 3,
+            &prev_consensus,
+            min_sigs,
             sig_data,
         )
-    }
-
-    fn try_update_consensus_peer(&self, header: &Header) -> SCResult<()> {
-        if let Some(chain_config) = &header.consensus_payload.new_chain_config {
-            require!(
-                !chain_config.peers.is_empty(),
-                "Consensus peer list is empty!"
-            );
-            self.consensus_peers(header.chain_id)
-                .set(&chain_config.peers);
-        }
-
-        Ok(())
     }
 
     fn verify(&self, public_key: &PublicKey, data: &BoxedBytes, signature: &Signature) -> bool {
@@ -125,28 +87,32 @@ pub trait BlockHeaderSync {
     ) -> SCResult<()> {
         require!(sigs.len() >= min_sigs, "Not enough signatures!");
 
-        let mut mask = Vec::new();
-        mask.resize(keys.len(), false);
+        let mut keeper_signed = Vec::new();
+        keeper_signed.resize(keys.len(), false);
 
         for sig in sigs {
-            let mut valid = false;
+            let mut signature_is_valid = false;
 
-            for j in 0..keys.len() {
-                if mask[j] {
+            for i in 0..keys.len() {
+                if keeper_signed[i] {
                     continue;
                 }
-                if self.verify(&keys[j], data, sig) {
-                    mask[j] = true;
-                    valid = true;
+                if self.verify(&keys[i], data, sig) {
+                    keeper_signed[i] = true;
+                    signature_is_valid = true;
 
                     break;
                 }
             }
 
-            require!(valid, "Multi-signature verification failed!");
+            require!(signature_is_valid, "Multi-signature verification failed!");
         }
 
         Ok(())
+    }
+
+    fn get_min_signatures(&self, consensus_size: usize) -> usize {
+        2 * consensus_size / 3
     }
 
     // events
@@ -158,5 +124,5 @@ pub trait BlockHeaderSync {
 
     #[view(getConsensusPeers)]
     #[storage_mapper("consensusPeers")]
-    fn consensus_peers(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, Vec<PeerConfig>>;
+    fn consensus_peers(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, Vec<PublicKey>>;
 }
