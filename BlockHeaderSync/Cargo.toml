@@ -34,3 +34,6 @@ path = "../common/public-key"
 
 [dependencies.util]
 path = "../common/util"
+
+[dependencies.hex]
+version = "0.4.2"
