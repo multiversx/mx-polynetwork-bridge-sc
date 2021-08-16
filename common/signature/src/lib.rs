@@ -26,13 +26,9 @@ impl NestedEncode for Signature {
 
 impl NestedDecode for Signature {
     fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-        let result = input.read_slice(SIGNATURE_LENGTH);
-        result.map(|sig| {
-            let mut sig_array = [0u8; SIGNATURE_LENGTH];
-            sig_array.copy_from_slice(sig);
+        let boxed_array = Box::<[u8; SIGNATURE_LENGTH]>::dep_decode(input)?;
 
-            Self(Box::from(sig_array))
-        })
+        Ok(Signature(boxed_array))
     }
 }
 
