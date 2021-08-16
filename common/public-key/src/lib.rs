@@ -7,7 +7,7 @@ elrond_wasm::derive_imports!();
 
 const PUBKEY_LENGTH: usize = 65;
 
-#[derive(TypeAbi, PartialEq)]
+#[derive(TypeAbi, PartialEq, Debug)]
 pub struct PublicKey(Box<[u8; PUBKEY_LENGTH]>);
 
 impl PublicKey {
@@ -26,13 +26,9 @@ impl NestedEncode for PublicKey {
 
 impl NestedDecode for PublicKey {
     fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-        let result = input.read_slice(PUBKEY_LENGTH);
-        result.map(|sig| {
-            let mut sig_array = [0u8; PUBKEY_LENGTH];
-            sig_array.copy_from_slice(sig);
+        let boxed_array = Box::<[u8; PUBKEY_LENGTH]>::dep_decode(input)?;
 
-            Self(Box::from(sig_array))
-        })
+        Ok(PublicKey(boxed_array))
     }
 }
 

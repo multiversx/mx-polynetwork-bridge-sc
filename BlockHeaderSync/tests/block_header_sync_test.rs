@@ -80,6 +80,11 @@ fn verify_test() {
     let pubkey1 = deserialize_from_string::<PublicKey>("04ef44beba84422bd76a599531c9fe50969a929a0fee35df66690f370ce19fa8c00ed4b649691d116b7deeb79b714156d18981916e58ae40c0ebacbf3bd0b87877");
     let pubkey2 = deserialize_from_string::<PublicKey>("04a4f44dd65cbcc52b1d1ac51747378a7f84753b5f7bf2760ca21390ced6b172bbf4d03e2cf4e0e79e46f7a757058d240e542853341e88feb1610ff03ba785cfc1");
 
+    println!("Pubkey1: {:?}", pubkey1);
+    println!();
+    println!("Pubkey2: {:?}", pubkey2);
+    println!();
+
     let pubkey1_copy = deserialize_from_string::<PublicKey>("04ef44beba84422bd76a599531c9fe50969a929a0fee35df66690f370ce19fa8c00ed4b649691d116b7deeb79b714156d18981916e58ae40c0ebacbf3bd0b87877");
     let pubkey2_copy = deserialize_from_string::<PublicKey>("04a4f44dd65cbcc52b1d1ac51747378a7f84753b5f7bf2760ca21390ced6b172bbf4d03e2cf4e0e79e46f7a757058d240e542853341e88feb1610ff03ba785cfc1");
 
@@ -88,20 +93,26 @@ fn verify_test() {
         deserialize_from_string::<PublicKey>("04a4f44dd65cbcc52b1d1ac51747378a7f84753b5f7bf2760ca21390ced6b172bbf4d03e2cf4e0e79e46f7a757058d240e542853341e88feb1610ff03ba785cfc1"),
     ];
 
+    println!("Pubkey-Vec: {:?}", public_keys);
+    println!();
+
     let signatures = vec![
         deserialize_from_string::<Signature>("30440220e631bea110252971770367cf76e7b8255ca0bfcaa5bc35468d31c3b72eac364d022076bd89b73879f30c7bd08326558d072e19e6f96cbb808dcbd40e4a209fe7f157"),
         deserialize_from_string::<Signature>("30440220f1376babf31495fbe2433887cdeee92eefd3eb1d31360370ab9d2727161d6bb202207594ffd3568452e0e514d929b6d0f7fedc7e776b6f7cb034e462441a855a5008")
     ];
 
-    let mut keys = Vec::new();
-    keys.push(pubkey1);
-    keys.push(pubkey2);
+    let mut keys_vec = Vec::new();
+    keys_vec.push(pubkey1);
+    keys_vec.push(pubkey2);
 
     // concatenate keys and signatures, to simulate how actual arguments are passed
     let mut concatenated_keys = Vec::new();
-    for key in &keys {
+    for key in &keys_vec {
         concatenated_keys.extend_from_slice(key.value_as_slice());
     }
+
+    println!("Concatenated-Keys: {:?}", concatenated_keys);
+    println!();
 
     let mut concatenated_signatures = Vec::new();
     for sig in &signatures {
@@ -124,6 +135,8 @@ fn verify_test() {
                     "Keys mismatch"
                 );
             }*/
+
+            println!("Deserialized-Keys: {:?}", keys);
 
             assert_eq!(keys[0].value_as_slice(), pubkey1_copy.value_as_slice(), "key 1 failed");
             assert_eq!(keys[1].value_as_slice(), pubkey2_copy.value_as_slice(), "key 2 failed");
