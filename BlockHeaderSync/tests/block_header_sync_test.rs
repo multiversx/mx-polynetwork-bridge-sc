@@ -77,19 +77,29 @@ fn verify_test() {
 
     block_header_sync.init();
 
+    let pubkey1 = deserialize_from_string::<PublicKey>("04ef44beba84422bd76a599531c9fe50969a929a0fee35df66690f370ce19fa8c00ed4b649691d116b7deeb79b714156d18981916e58ae40c0ebacbf3bd0b87877");
+    let pubkey2 = deserialize_from_string::<PublicKey>("04a4f44dd65cbcc52b1d1ac51747378a7f84753b5f7bf2760ca21390ced6b172bbf4d03e2cf4e0e79e46f7a757058d240e542853341e88feb1610ff03ba785cfc1");
+
+    let pubkey1_copy = deserialize_from_string::<PublicKey>("04ef44beba84422bd76a599531c9fe50969a929a0fee35df66690f370ce19fa8c00ed4b649691d116b7deeb79b714156d18981916e58ae40c0ebacbf3bd0b87877");
+    let pubkey2_copy = deserialize_from_string::<PublicKey>("04a4f44dd65cbcc52b1d1ac51747378a7f84753b5f7bf2760ca21390ced6b172bbf4d03e2cf4e0e79e46f7a757058d240e542853341e88feb1610ff03ba785cfc1");
+
     let public_keys = vec![
+        deserialize_from_string::<PublicKey>("04ef44beba84422bd76a599531c9fe50969a929a0fee35df66690f370ce19fa8c00ed4b649691d116b7deeb79b714156d18981916e58ae40c0ebacbf3bd0b87877"),
         deserialize_from_string::<PublicKey>("04a4f44dd65cbcc52b1d1ac51747378a7f84753b5f7bf2760ca21390ced6b172bbf4d03e2cf4e0e79e46f7a757058d240e542853341e88feb1610ff03ba785cfc1"),
-        deserialize_from_string::<PublicKey>("048247efcfeae0fdf760685d1ac1c083be3ff5e9a4a548bc3a2e98f0434f092483760cb1d3138a9beadf9f784d60604f37f1a51464ba228ec44f89879df1c10e07"),
     ];
 
     let signatures = vec![
-        deserialize_from_string::<Signature>("3044022090eefa6d778ebe346e2360e46d434049875466a167df75bc270f8b70e708cfe102207a0aaf13ba793facea50a35286b939653081e21b16f9ffa25fee454c66cf15cd"),
-        deserialize_from_string::<Signature>("30440220b614723b233746df455331e8fe89c118bd60f2ea8f3e9589611cb683bb92d09b022074c4d3c67b773a6dc01bf704c7565d967a973958f720e6842f3208b229c36fba")
+        deserialize_from_string::<Signature>("30440220e631bea110252971770367cf76e7b8255ca0bfcaa5bc35468d31c3b72eac364d022076bd89b73879f30c7bd08326558d072e19e6f96cbb808dcbd40e4a209fe7f157"),
+        deserialize_from_string::<Signature>("30440220f1376babf31495fbe2433887cdeee92eefd3eb1d31360370ab9d2727161d6bb202207594ffd3568452e0e514d929b6d0f7fedc7e776b6f7cb034e462441a855a5008")
     ];
+
+    let mut keys = Vec::new();
+    keys.push(pubkey1);
+    keys.push(pubkey2);
 
     // concatenate keys and signatures, to simulate how actual arguments are passed
     let mut concatenated_keys = Vec::new();
-    for key in &public_keys {
+    for key in &keys {
         concatenated_keys.extend_from_slice(key.value_as_slice());
     }
 
@@ -101,7 +111,7 @@ fn verify_test() {
     // try deserialize from concatenated
     match Vec::<PublicKey>::top_decode(concatenated_keys) {
         Result::Ok(keys) => {
-            assert_eq!(
+            /*assert_eq!(
                 keys.len(),
                 public_keys.len(),
                 "Keys deserialize error, lengths do not match"
@@ -113,7 +123,10 @@ fn verify_test() {
                     public_keys[i].value_as_slice(),
                     "Keys mismatch"
                 );
-            }
+            }*/
+
+            assert_eq!(keys[0].value_as_slice(), pubkey1_copy.value_as_slice(), "key 1 failed");
+            assert_eq!(keys[1].value_as_slice(), pubkey2_copy.value_as_slice(), "key 2 failed");
         }
         Result::Err(err) => {
             panic!(
@@ -160,6 +173,8 @@ fn deserialize_from_string<T: TopDecode>(input: &str) -> T {
             std::str::from_utf8(&err.message_bytes()).unwrap()
         ),
     };
+
+    let test = 5 + 5;
 
     deserialized
 }
