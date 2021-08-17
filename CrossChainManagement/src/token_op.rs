@@ -1,5 +1,7 @@
 elrond_wasm::imports!();
 
+// TODO: Check that the destination SC is not a critical one, like BlockHeaderSync or CrossChainManagement
+
 #[elrond_wasm_derive::module]
 pub trait TokenTransferModule {
     fn sc_async_transfer_esdt(

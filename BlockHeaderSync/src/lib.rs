@@ -22,6 +22,9 @@ pub trait BlockHeaderSync {
         );
 
         self.consensus_peers(header.chain_id).set(&book_keepers);
+        self.current_epoch_start_height(header.chain_id)
+            .set(&header.height);
+
         self.block_header_sync_event(&header);
 
         Ok(())
@@ -40,31 +43,38 @@ pub trait BlockHeaderSync {
             "Must set genesis header first"
         );
 
-        self.verify_header(&header, &header_hash, &sig_data)?;
+        self.verify_header(header.chain_id, header_hash, sig_data)?;
         self.consensus_peers(header.chain_id).set(&book_keepers);
+
+        if header.is_start_of_epoch {
+            self.current_epoch_start_height(header.chain_id)
+                .set(&header.height);
+        }
+
         self.block_header_sync_event(&header);
 
         Ok(())
     }
 
-    // private
-
+    #[endpoint(verifyHeader)]
     fn verify_header(
         &self,
-        header: &Header,
-        header_hash: &H256,
-        sig_data: &[Signature],
+        chain_id: u64,
+        header_hash: H256,
+        sig_data: Vec<Signature>,
     ) -> SCResult<()> {
-        let prev_consensus = self.consensus_peers(header.chain_id).get();
+        let prev_consensus = self.consensus_peers(chain_id).get();
         let min_sigs = self.get_min_signatures(prev_consensus.len());
 
         self.verify_multi_signature(
             &header_hash.as_bytes().into(),
             &prev_consensus,
             min_sigs,
-            sig_data,
+            &sig_data,
         )
     }
+
+    // private
 
     fn verify(&self, public_key: &PublicKey, data: &BoxedBytes, signature: &Signature) -> bool {
         if data.is_empty() {
@@ -122,7 +132,10 @@ pub trait BlockHeaderSync {
 
     // storage
 
-    #[view(getConsensusPeers)]
     #[storage_mapper("consensusPeers")]
     fn consensus_peers(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, Vec<PublicKey>>;
+
+    #[view(getCurrentEpochStartHeight)]
+    #[storage_mapper("currentEpochStartHeight")]
+    fn current_epoch_start_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
 }

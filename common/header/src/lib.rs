@@ -17,6 +17,7 @@ elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi, Debug, PartialEq)]
 pub struct Header {
+    pub is_start_of_epoch: bool,
     pub version: u32,
     pub chain_id: u64,
     pub prev_block_hash: H256,
@@ -112,6 +113,7 @@ impl Header {
             Err(DecodeError::INPUT_TOO_LONG)
         } else {
             Ok(Header {
+                is_start_of_epoch,
                 version,
                 chain_id,
                 prev_block_hash,
@@ -132,6 +134,7 @@ impl NestedEncode for Header {
     fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
         let mut sink = ZeroCopySink::new();
 
+        // sink.write_bool(self.is_start_of_epoch);
         sink.write_u32(self.version);
         sink.write_u64(self.chain_id);
         sink.write_hash(&self.prev_block_hash);

@@ -26,8 +26,14 @@ version = "0.18"
 [dependencies.header]
 path = "../common/header"
 
+[dependencies.signature]
+path = "../common/signature"
+
 [dependencies.transaction]
 path = "../common/transaction"
+
+[dependencies.merkle-proof]
+path = "../common/merkle-proof"
 
 [dependencies.esdt-payment]
 path = "../common/esdt-payment"

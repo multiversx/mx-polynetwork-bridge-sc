@@ -65,7 +65,7 @@ fn verify_multisig(msg: &Message, keys: &[Option<PublicKey>], sigs: &[Signature]
 */
 
 use block_header_sync::*;
-use elrond_wasm::elrond_codec::{NestedDecode, TopDecode};
+use elrond_wasm::elrond_codec::{TopDecode};
 use elrond_wasm_debug::TxContext;
 
 use public_key::*;
@@ -186,8 +186,6 @@ fn deserialize_from_string<T: TopDecode>(input: &str) -> T {
             std::str::from_utf8(&err.message_bytes()).unwrap()
         ),
     };
-
-    let test = 5 + 5;
 
     deserialized
 }
