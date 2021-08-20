@@ -24,7 +24,7 @@ impl MerkleProofNodePosition {
         match val {
             0 => Ok(Self::Left),
             1 => Ok(Self::Right),
-            _ => sc_error!("Failed From<u8> for MerkleProofNodePosition")
+            _ => sc_error!("Failed From<u8> for MerkleProofNodePosition"),
         }
     }
 }
@@ -74,27 +74,27 @@ impl<CA: CryptoApi> MerkleProof<CA> {
         Ok(Self {
             api,
             nodes,
-            raw_leaf
+            raw_leaf,
         })
     }
 }
 
 impl<CA: CryptoApi> MerkleProof<CA> {
-    pub fn is_proof_for_root(&self, root: &H256) -> bool {
+    pub fn get_proof_root(&self) -> H256 {
         let mut current_hash = self.hash_leaf(&self.raw_leaf);
 
         for node in &self.nodes {
             match node.position {
                 MerkleProofNodePosition::Left => {
                     current_hash = self.hash_children(&node.hash, &current_hash);
-                },
+                }
                 MerkleProofNodePosition::Right => {
                     current_hash = self.hash_children(&current_hash, &node.hash);
                 }
             }
         }
 
-        &current_hash == root
+        current_hash
     }
 
     pub fn into_raw_leaf(self) -> BoxedBytes {

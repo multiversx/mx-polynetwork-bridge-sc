@@ -108,6 +108,16 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
     }
     */
 
+    #[endpoint(getMerkleProof)]
+    fn get_merkle_proof(&self, proof: BoxedBytes, root: H256) -> SCResult<BoxedBytes> {
+        let merkle_proof = MerkleProof::from_bytes(self.crypto(), &proof)?;
+        let proof_root = merkle_proof.get_proof_root();
+
+        require!(proof_root == root, "Proof root mismatch");
+
+        Ok(merkle_proof.into_raw_leaf())
+    }
+
     // Transaction from other chain -> Elrond
     #[endpoint(verifyHeaderAndExecuteTx)]
     fn verify_header_and_execute_tx(
@@ -147,7 +157,7 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
                 MerkleProof::from_bytes(self.crypto(), &current_header_proof)?;
 
             require!(
-                current_header_merkle_proof.is_proof_for_root(&current_header.block_root),
+                current_header_merkle_proof.get_proof_root() == current_header.block_root,
                 "Current header merkle proof failed: Block Root does not match"
             );
 
@@ -161,7 +171,7 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         let tx_merkle_proof = MerkleProof::from_bytes(self.crypto(), &tx_proof)?;
 
         require!(
-            tx_merkle_proof.is_proof_for_root(&tx_header.cross_state_root),
+            tx_merkle_proof.get_proof_root() == tx_header.cross_state_root,
             "Tx merkle proof failed: Cross State Root does not match"
         );
 
