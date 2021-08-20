@@ -22,8 +22,7 @@ pub trait BlockHeaderSync {
         );
 
         self.consensus_peers().set(&book_keepers);
-        self.current_epoch_start_height()
-            .set(&header.height);
+        self.current_epoch_start_height().set(&header.height);
 
         self.block_header_sync_event(&header);
 
@@ -48,8 +47,7 @@ pub trait BlockHeaderSync {
         self.verify_header(header_hash, sig_data)?;
         self.consensus_peers().set(&book_keepers);
 
-        self.current_epoch_start_height()
-            .set(&header.height);
+        self.current_epoch_start_height().set(&header.height);
 
         self.block_header_sync_event(&header);
 
@@ -57,11 +55,7 @@ pub trait BlockHeaderSync {
     }
 
     #[endpoint(verifyHeader)]
-    fn verify_header(
-        &self,
-        header_hash: H256,
-        sig_data: Vec<Signature>,
-    ) -> SCResult<()> {
+    fn verify_header(&self, header_hash: H256, sig_data: Vec<Signature>) -> SCResult<()> {
         let prev_consensus = self.consensus_peers().get();
         let min_sigs = self.get_min_signatures(prev_consensus.len());
 
@@ -71,6 +65,11 @@ pub trait BlockHeaderSync {
             min_sigs,
             &sig_data,
         )
+    }
+
+    #[view(getHashForHeader)]
+    fn get_hash_for_header(&self, raw_header: BoxedBytes) -> H256 {
+        Header::hash_raw_header(self.crypto(), &raw_header)
     }
 
     // private
