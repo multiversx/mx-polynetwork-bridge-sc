@@ -113,34 +113,34 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
     fn verify_header_and_execute_tx(
         &self,
         tx_proof: BoxedBytes,
-        tx_header: Header,
-        tx_header_hash: H256,
+        raw_tx_header: BoxedBytes,
         current_header_proof: BoxedBytes,
-        current_header: Header,
-        current_header_hash: H256,
+        raw_current_header: BoxedBytes,
         header_sigs: Vec<Signature>,
     ) -> SCResult<()> {
         self.require_caller_approved()?;
+
+        let tx_header_hash = Header::hash_raw_header(self.crypto(), &raw_tx_header);
+        let tx_header = Header::top_decode(raw_tx_header.as_slice())?;
+
+        let current_header_hash = Header::hash_raw_header(self.crypto(), &raw_current_header);
+        let current_header = Header::top_decode(raw_current_header.as_slice())?;
 
         let block_header_sync_address = self.header_sync_contract_address().get();
 
         let epoch_start_height = self
             .block_header_sync_proxy(block_header_sync_address.clone())
-            .current_epoch_start_height(tx_header.chain_id)
+            .current_epoch_start_height()
             .execute_on_dest_context();
 
         // since the verify method returns SCResult<()>, the whole call will crash if the verify fails
         if tx_header.height >= epoch_start_height {
             self.block_header_sync_proxy(block_header_sync_address)
-                .verify_header(tx_header.chain_id, tx_header_hash, header_sigs)
+                .verify_header(tx_header_hash, header_sigs)
                 .execute_on_dest_context();
         } else {
             self.block_header_sync_proxy(block_header_sync_address)
-                .verify_header(
-                    current_header.chain_id,
-                    current_header_hash.clone(),
-                    header_sigs,
-                )
+                .verify_header(current_header_hash.clone(), header_sigs)
                 .execute_on_dest_context();
 
             let current_header_merkle_proof =

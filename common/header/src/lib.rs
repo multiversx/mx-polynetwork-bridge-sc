@@ -1,9 +1,9 @@
 #![no_std]
 
+use elrond_wasm::api::CryptoApi;
 use elrond_wasm::elrond_codec::*;
 use elrond_wasm::types::{BoxedBytes, H256};
 
-use vbft_block_info::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
@@ -17,7 +17,6 @@ elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi, Debug, PartialEq)]
 pub struct Header {
-    pub is_start_of_epoch: bool,
     pub version: u32,
     pub chain_id: u64,
     pub prev_block_hash: H256,
@@ -27,13 +26,12 @@ pub struct Header {
     pub timestamp: u32,
     pub height: u32,
     pub consensus_data: u64,
-    pub consensus_payload: VbftBlockInfo,
+    pub consensus_payload: BoxedBytes, // VbftBlockInfo, not used in the SC
     pub next_book_keeper: BoxedBytes,
 }
 
 impl Header {
     pub fn decode_from_source(source: &mut ZeroCopySource) -> Result<Self, DecodeError> {
-        let is_start_of_epoch;
         let version;
         let chain_id;
         let prev_block_hash;
@@ -45,11 +43,6 @@ impl Header {
         let consensus_data;
         let consensus_payload;
         let next_book_keeper;
-
-        match source.next_bool() {
-            Some(val) => is_start_of_epoch = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
 
         match source.next_u32() {
             Some(val) => version = val,
@@ -96,12 +89,9 @@ impl Header {
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
-        // ignore payload byte length
-        let _ = source.next_var_uint();
-
-        match VbftBlockInfo::decode_from_source(source, is_start_of_epoch) {
-            Ok(bi) => consensus_payload = bi,
-            Err(err) => return Err(err),
+        match source.next_var_bytes() {
+            Some(val) => consensus_payload = val,
+            None => return Err(DecodeError::INPUT_TOO_SHORT),
         }
 
         match source.next_bytes(ETH_ADDRESS_LEN) {
@@ -113,7 +103,6 @@ impl Header {
             Err(DecodeError::INPUT_TOO_LONG)
         } else {
             Ok(Header {
-                is_start_of_epoch,
                 version,
                 chain_id,
                 prev_block_hash,
@@ -128,13 +117,16 @@ impl Header {
             })
         }
     }
+
+    pub fn hash_raw_header<CA: CryptoApi>(api: CA, raw_header: &BoxedBytes) -> H256 {
+        api.sha256(raw_header.as_slice())
+    }
 }
 
 impl NestedEncode for Header {
     fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
         let mut sink = ZeroCopySink::new();
 
-        // sink.write_bool(self.is_start_of_epoch);
         sink.write_u32(self.version);
         sink.write_u64(self.chain_id);
         sink.write_hash(&self.prev_block_hash);

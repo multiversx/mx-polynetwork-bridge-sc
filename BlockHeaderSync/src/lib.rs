@@ -17,12 +17,12 @@ pub trait BlockHeaderSync {
     #[endpoint(syncGenesisHeader)]
     fn sync_genesis_header(&self, header: Header, book_keepers: Vec<PublicKey>) -> SCResult<()> {
         require!(
-            self.consensus_peers(header.chain_id).is_empty(),
+            self.consensus_peers().is_empty(),
             "Genesis header already set"
         );
 
-        self.consensus_peers(header.chain_id).set(&book_keepers);
-        self.current_epoch_start_height(header.chain_id)
+        self.consensus_peers().set(&book_keepers);
+        self.current_epoch_start_height()
             .set(&header.height);
 
         self.block_header_sync_event(&header);
@@ -33,23 +33,23 @@ pub trait BlockHeaderSync {
     #[endpoint(syncBlockHeader)]
     fn sync_block_header(
         &self,
-        header: Header,
-        header_hash: H256,
+        raw_header: BoxedBytes,
         book_keepers: Vec<PublicKey>,
         sig_data: Vec<Signature>,
     ) -> SCResult<()> {
         require!(
-            !self.consensus_peers(header.chain_id).is_empty(),
+            !self.consensus_peers().is_empty(),
             "Must set genesis header first"
         );
 
-        self.verify_header(header.chain_id, header_hash, sig_data)?;
-        self.consensus_peers(header.chain_id).set(&book_keepers);
+        let header_hash = Header::hash_raw_header(self.crypto(), &raw_header);
+        let header = Header::top_decode(raw_header.as_slice())?;
 
-        if header.is_start_of_epoch {
-            self.current_epoch_start_height(header.chain_id)
-                .set(&header.height);
-        }
+        self.verify_header(header_hash, sig_data)?;
+        self.consensus_peers().set(&book_keepers);
+
+        self.current_epoch_start_height()
+            .set(&header.height);
 
         self.block_header_sync_event(&header);
 
@@ -59,11 +59,10 @@ pub trait BlockHeaderSync {
     #[endpoint(verifyHeader)]
     fn verify_header(
         &self,
-        chain_id: u64,
         header_hash: H256,
         sig_data: Vec<Signature>,
     ) -> SCResult<()> {
-        let prev_consensus = self.consensus_peers(chain_id).get();
+        let prev_consensus = self.consensus_peers().get();
         let min_sigs = self.get_min_signatures(prev_consensus.len());
 
         self.verify_multi_signature(
@@ -125,6 +124,13 @@ pub trait BlockHeaderSync {
         2 * consensus_size / 3
     }
 
+    fn get_next_bookkeeper(&self) {}
+
+    // TODO: Implement
+    fn ripemd160(&self, _data: &[u8]) -> BoxedBytes {
+        BoxedBytes::empty()
+    }
+
     // events
 
     #[event("blockHeaderSyncEvent")]
@@ -133,9 +139,9 @@ pub trait BlockHeaderSync {
     // storage
 
     #[storage_mapper("consensusPeers")]
-    fn consensus_peers(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, Vec<PublicKey>>;
+    fn consensus_peers(&self) -> SingleValueMapper<Self::Storage, Vec<PublicKey>>;
 
     #[view(getCurrentEpochStartHeight)]
     #[storage_mapper("currentEpochStartHeight")]
-    fn current_epoch_start_height(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u32>;
+    fn current_epoch_start_height(&self) -> SingleValueMapper<Self::Storage, u32>;
 }
