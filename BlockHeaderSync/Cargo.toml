@@ -32,8 +32,15 @@ path = "../common/signature"
 [dependencies.public-key]
 path = "../common/public-key"
 
+[dependencies.eth-address]
+path = "../common/eth-address"
+
 [dependencies.util]
 path = "../common/util"
 
 [dependencies.hex]
 version = "0.4.2"
+
+[dependencies.zero-copy-sink]
+version = "0.0.0"
+path = "../common/zero-copy-sink"

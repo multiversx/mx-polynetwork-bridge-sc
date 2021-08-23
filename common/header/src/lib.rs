@@ -4,6 +4,7 @@ use elrond_wasm::api::CryptoApi;
 use elrond_wasm::elrond_codec::*;
 use elrond_wasm::types::{BoxedBytes, H256};
 
+use eth_address::*;
 use zero_copy_sink::*;
 use zero_copy_source::*;
 
@@ -11,11 +12,9 @@ pub mod chain_config;
 pub mod peer_config;
 pub mod vbft_block_info;
 
-const ETH_ADDRESS_LEN: usize = 20;
-
 elrond_wasm::derive_imports!();
 
-#[derive(TypeAbi, Debug, PartialEq)]
+#[derive(TypeAbi, PartialEq)]
 pub struct Header {
     pub version: u32,
     pub chain_id: u64,
@@ -27,7 +26,7 @@ pub struct Header {
     pub height: u32,
     pub consensus_data: u64,
     pub consensus_payload: BoxedBytes, // VbftBlockInfo, not used in the SC
-    pub next_book_keeper: BoxedBytes,
+    pub next_book_keeper: EthAddress,
 }
 
 impl Header {
@@ -94,8 +93,8 @@ impl Header {
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         }
 
-        match source.next_bytes(ETH_ADDRESS_LEN) {
-            Some(val) => next_book_keeper = val,
+        match source.next_bytes(ETH_ADDRESS_LENGTH) {
+            Some(val) => next_book_keeper = EthAddress::from(val.as_slice()),
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
@@ -137,7 +136,7 @@ impl NestedEncode for Header {
         sink.write_u32(self.height);
         sink.write_u64(self.consensus_data);
         let _ = self.consensus_payload.dep_encode(&mut sink);
-        sink.write_bytes(self.next_book_keeper.as_slice());
+        sink.write_bytes(self.next_book_keeper.value_as_slice());
 
         dest.write(sink.get_sink().as_slice());
 

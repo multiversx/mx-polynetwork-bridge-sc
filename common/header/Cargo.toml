@@ -25,6 +25,10 @@ path = "../signature"
 version = "0.0.0"
 path = "../public-key"
 
+[dependencies.eth-address]
+version = "0.0.0"
+path = "../eth-address"
+
 [dependencies.zero-copy-sink]
 version = "0.0.0"
 path = "../zero-copy-sink"

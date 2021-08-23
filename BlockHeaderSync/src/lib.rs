@@ -1,8 +1,12 @@
 #![no_std]
 
+use eth_address::EthAddress;
 use header::*;
 use public_key::*;
 use signature::*;
+use zero_copy_sink::ZeroCopySink;
+
+const MIN_CONSENSUS_SIZE: usize = 3;
 
 elrond_wasm::imports!();
 
@@ -44,9 +48,26 @@ pub trait BlockHeaderSync {
         let header_hash = Header::hash_raw_header(self.crypto(), &raw_header);
         let header = Header::top_decode(raw_header.as_slice())?;
 
-        self.verify_header(header_hash, sig_data)?;
-        self.consensus_peers().set(&book_keepers);
+        let current_epoch_start_height = self.current_epoch_start_height().get();
+        require!(
+            header.height > current_epoch_start_height,
+            "Header height too low"
+        );
 
+        require!(
+            book_keepers.len() > MIN_CONSENSUS_SIZE,
+            "New consensus has too few members"
+        );
+
+        self.verify_header(header_hash, sig_data)?;
+
+        let (next_book_keeper, _) = self.get_next_bookkeeper(&book_keepers);
+        require!(
+            header.next_book_keeper == next_book_keeper,
+            "NextBookkeeper mismatch"
+        );
+
+        self.consensus_peers().set(&book_keepers);
         self.current_epoch_start_height().set(&header.height);
 
         self.block_header_sync_event(&header);
@@ -80,7 +101,7 @@ pub trait BlockHeaderSync {
         }
 
         self.crypto().verify_secp256k1(
-            public_key.value_as_slice(),
+            public_key.as_key(),
             data.as_slice(),
             signature.value_as_slice(),
         )
@@ -120,14 +141,32 @@ pub trait BlockHeaderSync {
     }
 
     fn get_min_signatures(&self, consensus_size: usize) -> usize {
-        2 * consensus_size / 3
+        2 * consensus_size / 3 + 1
     }
 
-    fn get_next_bookkeeper(&self) {}
+    fn get_next_bookkeeper(&self, public_keys: &[PublicKey]) -> (EthAddress, Vec<EthAddress>) {
+        let keys_len = public_keys.len();
+        let min_sigs = self.get_min_signatures(keys_len);
+        let mut sink = ZeroCopySink::new();
+        let mut keepers = Vec::with_capacity(keys_len);
 
-    // TODO: Implement
-    fn ripemd160(&self, _data: &[u8]) -> BoxedBytes {
-        BoxedBytes::empty()
+        sink.write_u16(keys_len as u16);
+
+        for pub_key in public_keys {
+            let compressed_key = pub_key.compress_key();
+            let hash = self.crypto().keccak256(pub_key.as_key());
+
+            sink.write_var_bytes(compressed_key.as_slice());
+            keepers.push(EthAddress::from(hash.as_bytes()));
+        }
+
+        sink.write_u16(min_sigs as u16);
+
+        let sha256_hash = self.crypto().sha256(sink.get_sink().as_slice());
+        let ripemd160_hash = self.crypto().ripemd160(sha256_hash.as_bytes());
+        let next_book_keeper = EthAddress::from(*ripemd160_hash);
+
+        (next_book_keeper, keepers)
     }
 
     // events
