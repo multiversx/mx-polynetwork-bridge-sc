@@ -39,7 +39,7 @@ pub trait TransactionRelayer {
         args: TransactionArgs<Self::BigUint>,
         from_contract_address: BoxedBytes,
         from_chain_id: u64,
-    ) -> SCResult<AsyncCall<Self::SendApi>> {
+    ) -> SCResult<()> {
         require!(
             !from_contract_address.is_empty(),
             "from_contract_address cannot be empty"
@@ -64,11 +64,19 @@ pub trait TransactionRelayer {
             token_id.is_valid_esdt_identifier(),
             "Invalid Token ID provided"
         );
+
         self.try_mint(&token_id, &args.amount)?;
+        self.send().direct(
+            &elrond_dest_address,
+            &token_id,
+            0,
+            &args.amount,
+            b"PolyBridge Transfer",
+        );
 
         self.unlock_event(&token_id, &elrond_dest_address, &args.amount);
 
-        Ok(self.async_transfer_esdt(elrond_dest_address, token_id, args.amount))
+        Ok(())
     }
 
     // endpoints
@@ -148,19 +156,6 @@ pub trait TransactionRelayer {
         );
 
         Ok(Address::from_slice(address.as_slice()))
-    }
-
-    fn async_transfer_esdt(
-        &self,
-        to: Address,
-        token_id: TokenIdentifier,
-        amount: Self::BigUint,
-    ) -> AsyncCall<Self::SendApi> {
-        let contract_call_raw =
-            ContractCall::<Self::SendApi, ()>::new(self.send(), to, BoxedBytes::empty())
-                .with_token_transfer(token_id, amount);
-
-        contract_call_raw.async_call()
     }
 
     fn try_mint(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
