@@ -9,6 +9,12 @@ use zero_copy_source::*;
 
 elrond_wasm::derive_imports!();
 
+pub mod to_merkle_value;
+pub mod transaction_args;
+
+pub use to_merkle_value::*;
+pub use transaction_args::*;
+
 #[derive(NestedDecode, NestedEncode, TopDecode, TopEncode, TypeAbi, PartialEq)]
 pub enum TransactionStatus {
     None,
@@ -16,13 +22,6 @@ pub enum TransactionStatus {
     InProgress,
     Executed,
     Rejected,
-}
-
-#[derive(TypeAbi)]
-pub struct TransactionArgs<BigUint: BigUintApi> {
-    asset_hash: BoxedBytes,
-    dest_address: BoxedBytes,
-    amount: BigUint,
 }
 
 // Not using the built-in Address type for addresses, as not all chains have 32-byte addresses
@@ -37,16 +36,17 @@ pub struct Transaction {
     pub method_args: BoxedBytes,
 }
 
-#[derive(TypeAbi)]
-pub struct ToMerkleValue {
-    pub poly_tx_hash: H256,
-    pub from_chain_id: u64,
-    pub tx: Transaction,
-}
-
 impl Transaction {
     pub fn get_partial_serialized(&self) -> BoxedBytes {
         self.serialize_partial().get_sink()
+    }
+
+    pub fn decode_method_args<BigUint: BigUintApi>(
+        &self,
+    ) -> Result<TransactionArgs<BigUint>, DecodeError> {
+        let mut source = ZeroCopySource::new(self.method_args.as_slice());
+
+        TransactionArgs::decode_from_source(&mut source)
     }
 
     pub fn decode_from_source(source: &mut ZeroCopySource) -> Result<Self, DecodeError> {
@@ -103,37 +103,6 @@ impl Transaction {
             method_args,
         });
     }
-
-    pub fn decode_tx_args<BigUint: BigUintApi>(
-        &self,
-    ) -> Result<TransactionArgs<BigUint>, DecodeError> {
-        let mut source = ZeroCopySource::new(self.method_args.as_slice());
-
-        let asset_hash;
-        let dest_address;
-        let amount;
-
-        match source.next_var_bytes() {
-            Some(val) => asset_hash = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        match source.next_var_bytes() {
-            Some(val) => dest_address = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        match source.next_u256::<BigUint>() {
-            Some(val) => amount = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        Ok(TransactionArgs {
-            asset_hash,
-            dest_address,
-            amount,
-        })
-    }
 }
 
 // private methods
@@ -181,64 +150,6 @@ impl TopEncode for Transaction {
 }
 
 impl TopDecode for Transaction {
-    fn top_decode<I: TopDecodeInput>(input: I) -> Result<Self, DecodeError> {
-        top_decode_from_nested(input)
-    }
-}
-
-impl NestedEncode for ToMerkleValue {
-    fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
-        let mut sink = ZeroCopySink::new();
-
-        sink.write_var_bytes(self.poly_tx_hash.as_bytes());
-        sink.write_u64(self.from_chain_id);
-        self.tx.dep_encode(&mut sink)?;
-
-        dest.write(sink.get_sink().as_slice());
-
-        Ok(())
-    }
-}
-
-impl NestedDecode for ToMerkleValue {
-    fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-        let mut source = ZeroCopySource::new(input.flush());
-
-        let poly_tx_hash;
-        let from_chain_id;
-        let tx;
-
-        match source.next_var_bytes() {
-            Some(val) => poly_tx_hash = H256::from_slice(val.as_slice()),
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        match source.next_u64() {
-            Some(val) => from_chain_id = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        match Transaction::decode_from_source(&mut source) {
-            Result::Ok(val) => tx = val,
-            Result::Err(err) => return Err(err),
-        }
-
-        Ok(Self {
-            poly_tx_hash,
-            from_chain_id,
-            tx,
-        })
-    }
-}
-
-impl TopEncode for ToMerkleValue {
-    #[inline]
-    fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
-        top_encode_from_nested(self, output)
-    }
-}
-
-impl TopDecode for ToMerkleValue {
     fn top_decode<I: TopDecodeInput>(input: I) -> Result<Self, DecodeError> {
         top_decode_from_nested(input)
     }

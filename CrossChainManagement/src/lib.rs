@@ -13,6 +13,7 @@ mod token_op;
 
 #[elrond_wasm_derive::contract]
 pub trait CrossChainManagement: token_op::TokenTransferModule {
+    // TODO: Deploy TransactionRelayer SC here.
     #[init]
     fn init(&self, header_sync_contract_address: Address, own_chain_id: u64) {
         self.header_sync_contract_address()

@@ -1,4 +1,4 @@
 #![no_std]
 
-pub use block_header_sync::*;
+pub use transaction_relayer::*;
 pub use elrond_wasm_output::*;
