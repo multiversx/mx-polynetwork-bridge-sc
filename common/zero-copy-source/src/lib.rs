@@ -2,6 +2,7 @@
 
 use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
 use elrond_wasm::elrond_codec::*;
+use elrond_wasm::api::BigUintApi;
 
 #[derive(Clone)]
 pub struct ZeroCopySource {
@@ -172,6 +173,14 @@ impl ZeroCopySource {
         }
         else {
             None
+        }
+    }
+
+    /// Gets the next u256, but converts it to BigUint (which also cuts the leading zeroes)
+    pub fn next_u256<BigUint: BigUintApi>(&mut self) -> Option<BigUint> {
+        match self.next_bytes(H256::len_bytes()) {
+            Some(hash_bytes) => Some(BigUint::from_bytes_be(hash_bytes.as_slice())),
+            None => None
         }
     }
 

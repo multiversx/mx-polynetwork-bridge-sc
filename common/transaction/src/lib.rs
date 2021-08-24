@@ -1,5 +1,6 @@
 #![no_std]
 
+use elrond_wasm::api::BigUintApi;
 use elrond_wasm::elrond_codec::*;
 use elrond_wasm::types::{BoxedBytes, H256};
 
@@ -17,6 +18,13 @@ pub enum TransactionStatus {
     Rejected,
 }
 
+#[derive(TypeAbi)]
+pub struct TransactionArgs<BigUint: BigUintApi> {
+    asset_hash: BoxedBytes,
+    dest_address: BoxedBytes,
+    amount: BigUint,
+}
+
 // Not using the built-in Address type for addresses, as not all chains have 32-byte addresses
 #[derive(TypeAbi)]
 pub struct Transaction {
@@ -26,8 +34,7 @@ pub struct Transaction {
     pub to_chain_id: u64,
     pub to_contract_address: BoxedBytes,
     pub method_name: BoxedBytes,
-    pub method_args: Vec<BoxedBytes>, // TODO: Figure out argument format and fix deserialization
-	// In the ETH SC, all method_args come as a single var_bytes, not N var_bytes
+    pub method_args: BoxedBytes,
 }
 
 #[derive(TypeAbi)]
@@ -49,7 +56,7 @@ impl Transaction {
         let to_chain_id;
         let to_contract_address;
         let method_name;
-        let mut method_args = Vec::new();
+        let method_args;
 
         match source.next_var_bytes() {
             Some(val) => source_chain_tx_hash = H256::from_slice(val.as_slice()),
@@ -81,15 +88,8 @@ impl Transaction {
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
-        match source.next_var_uint() {
-            Some(len) => {
-                for _ in 0..len {
-                    match source.next_var_bytes() {
-                        Some(arg) => method_args.push(arg),
-                        None => return Err(DecodeError::INPUT_TOO_SHORT),
-                    }
-                }
-            }
+        match source.next_var_bytes() {
+            Some(val) => method_args = val,
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
@@ -103,6 +103,37 @@ impl Transaction {
             method_args,
         });
     }
+
+    pub fn decode_tx_args<BigUint: BigUintApi>(
+        &self,
+    ) -> Result<TransactionArgs<BigUint>, DecodeError> {
+        let mut source = ZeroCopySource::new(self.method_args.as_slice());
+
+        let asset_hash;
+        let dest_address;
+        let amount;
+
+        match source.next_var_bytes() {
+            Some(val) => asset_hash = val,
+            None => return Err(DecodeError::INPUT_TOO_SHORT),
+        };
+
+        match source.next_var_bytes() {
+            Some(val) => dest_address = val,
+            None => return Err(DecodeError::INPUT_TOO_SHORT),
+        };
+
+        match source.next_u256::<BigUint>() {
+            Some(val) => amount = val,
+            None => return Err(DecodeError::INPUT_TOO_SHORT),
+        };
+
+        Ok(TransactionArgs {
+            asset_hash,
+            dest_address,
+            amount,
+        })
+    }
 }
 
 // private methods
@@ -115,11 +146,7 @@ impl Transaction {
         sink.write_u64(self.to_chain_id);
         sink.write_var_bytes(self.to_contract_address.as_slice());
         sink.write_var_bytes(self.method_name.as_slice());
-
-        sink.write_var_uint(self.method_args.len() as u64);
-        for arg in &self.method_args {
-            sink.write_var_bytes(arg.as_slice());
-        }
+        sink.write_var_bytes(self.method_args.as_slice());
 
         sink
     }
