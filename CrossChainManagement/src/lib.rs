@@ -1,7 +1,6 @@
 #![no_std]
 #![allow(non_snake_case)]
 
-use esdt_payment::*;
 use header::Header;
 use merkle_proof::MerkleProof;
 use signature::Signature;
@@ -9,38 +8,41 @@ use transaction::*;
 
 elrond_wasm::imports!();
 
-mod token_op;
-
 #[elrond_wasm_derive::contract]
-pub trait CrossChainManagement: token_op::TokenTransferModule {
-    // TODO: Deploy TransactionRelayer SC here.
+pub trait CrossChainManagement {
+    // TODO: make upgrade-friendly
     #[init]
-    fn init(&self, header_sync_contract_address: Address, own_chain_id: u64) {
+    fn init(
+        &self,
+        header_sync_contract_address: Address,
+        own_chain_id: u64,
+        transaction_relayer_code: BoxedBytes,
+    ) -> SCResult<()> {
+        require!(
+            self.blockchain()
+                .is_smart_contract(&header_sync_contract_address),
+            "Provided HeaderSync address is not a smart contract address"
+        );
+
+        let deploy_gas = self.blockchain().get_gas_left() / 2;
+        let opt_address = self
+            .transaction_relayer_proxy(Address::zero())
+            .init()
+            .with_gas_limit(deploy_gas)
+            .deploy_contract(&transaction_relayer_code, CodeMetadata::DEFAULT);
+
+        let transaction_relayer_address = opt_address.ok_or("Transaction Relayer deploy failed")?;
+        self.transaction_relayer_contract_address()
+            .set(&transaction_relayer_address);
+
         self.header_sync_contract_address()
             .set(&header_sync_contract_address);
         self.own_chain_id().set(&own_chain_id);
+
+        Ok(())
     }
 
     // endpoints - owner-only
-
-    #[only_owner]
-    #[endpoint(addTokenToWhitelist)]
-    fn add_token_to_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        self.require_local_mint_role_set(&token_id)?;
-        self.require_local_burn_role_set(&token_id)?;
-
-        self.token_whitelist().insert(token_id);
-
-        Ok(())
-    }
-
-    #[only_owner]
-    #[endpoint(removeTokenFromWhitelist)]
-    fn remove_token_from_whitelist(&self, token_id: TokenIdentifier) -> SCResult<()> {
-        self.token_whitelist().remove(&token_id);
-
-        Ok(())
-    }
 
     #[only_owner]
     #[endpoint(addAddressToApprovedlist)]
@@ -202,54 +204,36 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
     #[endpoint(createCrossChainTx)]
     fn create_cross_chain_tx(
         &self,
-        #[payment_token] token_identifier: TokenIdentifier,
-        #[payment] esdt_value: Self::BigUint,
         to_chain_id: u64,
         to_contract_address: BoxedBytes,
         method_name: BoxedBytes,
-        #[var_args] method_args: VarArgs<BoxedBytes>,
+        method_args: TransactionArgs<Self::BigUint>,
     ) -> SCResult<()> {
+        let caller = self.blockchain().get_caller();
+        let transaction_relayer_address = self.transaction_relayer_contract_address().get();
+        require!(
+            caller == transaction_relayer_address,
+            "Only TransactionRelayer SC may call this function"
+        );
+
         let own_chain_id = self.own_chain_id().get();
 
         require!(
             to_chain_id != own_chain_id,
             "Must send to a chain other than Elrond"
         );
-        require!(token_identifier.is_esdt(), "eGLD payment not allowed");
-        require!(
-            self.call_value().esdt_token_nonce() == 0,
-            "Can't transfer NFT"
-        );
-        require!(esdt_value > 0, "Must transfer more than 0");
 
         let tx_id = self.cross_chain_tx_id(to_chain_id).get();
-        let caller = self.blockchain().get_caller();
-        let from_contract_address = BoxedBytes::from(caller.as_bytes());
         let mut tx = Transaction {
             source_chain_tx_hash: H256::zero(),
             cross_chain_tx_id: BoxedBytes::empty(), // TODO: serialize tx_id if needed, discuss
-            from_contract_address: from_contract_address.clone(),
+            from_contract_address: transaction_relayer_address.into_boxed_bytes(),
             to_chain_id,
             to_contract_address: to_contract_address.clone(),
             method_name,
-            method_args: method_args.into_vec(),
+            method_args,
         };
-        tx.source_chain_tx_hash = self.hash_transaction(&tx);
-
-        if token_identifier.is_esdt() && esdt_value > 0 {
-            require!(
-                self.token_whitelist().contains(&token_identifier),
-                "Token is not on whitelist. Transaction rejected"
-            );
-
-            self.payment_for_tx(&tx.source_chain_tx_hash)
-                .set(&EsdtPayment {
-                    sender: from_contract_address,
-                    receiver: to_contract_address,
-                    token_id: token_identifier,
-                    amount: esdt_value,
-                });
-        }
+        tx.hash_transaction(self.crypto());
 
         self.tx_by_hash(own_chain_id, &tx.source_chain_tx_hash)
             .set(&tx);
@@ -271,7 +255,7 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         &self,
         from_chain_id: u64,
         poly_tx_hash: H256,
-    ) -> OptionalResult<Transaction> {
+    ) -> OptionalResult<Transaction<Self::BigUint>> {
         if !self.tx_by_hash(from_chain_id, &poly_tx_hash).is_empty() {
             OptionalResult::Some(self.tx_by_hash(from_chain_id, &poly_tx_hash).get())
         } else {
@@ -281,46 +265,6 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
 
     // private
 
-    fn process_pending_tx(
-        &self,
-        tx: Transaction,
-        esdt_payment: EsdtPayment<Self::BigUint>,
-    ) -> SCResult<AsyncCall<Self::SendApi>> {
-        self.tx_status(&tx.source_chain_tx_hash)
-            .set(&TransactionStatus::InProgress);
-
-        let elrond_dest_address = self.try_convert_to_elrond_address(&tx.to_contract_address)?;
-        if self.blockchain().is_smart_contract(&elrond_dest_address) {
-            Ok(self
-                .sc_async_transfer_esdt(
-                    elrond_dest_address,
-                    esdt_payment.token_id,
-                    esdt_payment.amount,
-                    tx.method_name,
-                    &tx.method_args,
-                )
-                .with_callback(
-                    self.callbacks()
-                        .async_transfer_callback(tx.source_chain_tx_hash),
-                ))
-        } else {
-            Ok(self
-                .account_async_transfer_esdt(
-                    elrond_dest_address,
-                    esdt_payment.token_id,
-                    esdt_payment.amount,
-                )
-                .with_callback(
-                    self.callbacks()
-                        .async_transfer_callback(tx.source_chain_tx_hash),
-                ))
-        }
-    }
-
-    fn hash_transaction(&self, tx: &Transaction) -> H256 {
-        self.crypto().sha256(tx.get_partial_serialized().as_slice())
-    }
-
     fn try_convert_to_elrond_address(&self, address: &BoxedBytes) -> SCResult<Address> {
         require!(
             address.len() == Address::len_bytes(),
@@ -328,36 +272,6 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         );
 
         Ok(Address::from_slice(address.as_slice()))
-    }
-
-    fn refund_payment_for_tx(&self, poly_tx_hash: &H256) {
-        if self.payment_for_tx(poly_tx_hash).is_empty() {
-            return;
-        }
-
-        let payment = self.payment_for_tx(poly_tx_hash).get();
-
-        // this should never fail, but calling unwrap directly adds a lot of wasm bloat
-        // so we check anyway
-        if let Ok(elrond_dest_address) = self.try_convert_to_elrond_address(&payment.sender) {
-            let _ = self.transfer_esdt(
-                &elrond_dest_address,
-                &payment.token_id,
-                &payment.amount,
-                self.data_or_empty(&elrond_dest_address, b"refund"),
-            );
-        }
-    }
-
-    fn try_burn_payment_for_tx(&self, poly_tx_hash: &H256) -> SCResult<()> {
-        if self.payment_for_tx(poly_tx_hash).is_empty() {
-            return Ok(());
-        }
-
-        let payment = self.payment_for_tx(poly_tx_hash).get();
-        self.try_burn(&payment.token_id, &payment.amount)?;
-
-        Ok(())
     }
 
     fn data_or_empty(&self, to: &Address, data: &'static [u8]) -> &[u8] {
@@ -404,27 +318,29 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         sc_address: Address,
     ) -> block_header_sync::Proxy<Self::SendApi>;
 
+    #[proxy]
+    fn transaction_relayer_proxy(
+        &self,
+        sc_address: Address,
+    ) -> transaction_relayer::Proxy<Self::SendApi>;
+
     // events
 
     // for tx from Elrond to another chain
     #[event("createTransaction")]
-    fn create_tx_event(&self, tx: &Transaction);
+    fn create_tx_event(&self, tx: &Transaction<Self::BigUint>);
 
     // for tx from another chain to Elrond
     #[event("receiveTransaction")]
-    fn receive_tx_event(&self, tx: &Transaction);
+    fn receive_tx_event(&self, tx: &Transaction<Self::BigUint>);
 
     // storage
 
     #[storage_mapper("headerSyncContractAddress")]
     fn header_sync_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 
-    #[view(getPaymentForTx)]
-    #[storage_mapper("paymentForTx")]
-    fn payment_for_tx(
-        &self,
-        poly_tx_hash: &H256,
-    ) -> SingleValueMapper<Self::Storage, EsdtPayment<Self::BigUint>>;
+    #[storage_mapper("transactionRelayerContractAddress")]
+    fn transaction_relayer_contract_address(&self) -> SingleValueMapper<Self::Storage, Address>;
 
     #[view(getOwnChainId)]
     #[storage_mapper("ownChainId")]
@@ -439,7 +355,7 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         &self,
         from_chain_id: u64,
         poly_tx_hash: &H256,
-    ) -> SingleValueMapper<Self::Storage, Transaction>;
+    ) -> SingleValueMapper<Self::Storage, Transaction<Self::BigUint>>;
 
     // list of hashes for pending tx from elrond to another chain
     #[storage_mapper("pendingCrosschainTxList")]
@@ -449,9 +365,6 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
     #[storage_mapper("txStatus")]
     fn tx_status(&self, poly_tx_hash: &H256)
         -> SingleValueMapper<Self::Storage, TransactionStatus>;
-
-    #[storage_mapper("tokenWhitelist")]
-    fn token_whitelist(&self) -> SafeSetMapper<Self::Storage, TokenIdentifier>;
 
     // Approved address list - These addresses can mark transactions as executed/rejected
     // which triggers a burn/refund respectively

@@ -1,3 +1,4 @@
+use elrond_wasm::api::BigUintApi;
 use elrond_wasm::elrond_codec::*;
 use elrond_wasm::types::H256;
 
@@ -7,13 +8,13 @@ use zero_copy_source::*;
 elrond_wasm::derive_imports!();
 
 #[derive(TypeAbi)]
-pub struct ToMerkleValue {
+pub struct ToMerkleValue<BigUint: BigUintApi> {
     pub poly_tx_hash: H256,
     pub from_chain_id: u64,
-    pub tx: crate::Transaction,
+    pub tx: crate::Transaction<BigUint>,
 }
 
-impl NestedEncode for ToMerkleValue {
+impl<BigUint: BigUintApi> NestedEncode for ToMerkleValue<BigUint> {
     fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
         let mut sink = ZeroCopySink::new();
 
@@ -27,7 +28,7 @@ impl NestedEncode for ToMerkleValue {
     }
 }
 
-impl NestedDecode for ToMerkleValue {
+impl<BigUint: BigUintApi> NestedDecode for ToMerkleValue<BigUint> {
     fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
         let mut source = ZeroCopySource::new(input.flush());
 
@@ -58,14 +59,14 @@ impl NestedDecode for ToMerkleValue {
     }
 }
 
-impl TopEncode for ToMerkleValue {
+impl<BigUint: BigUintApi> TopEncode for ToMerkleValue<BigUint> {
     #[inline]
     fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
         top_encode_from_nested(self, output)
     }
 }
 
-impl TopDecode for ToMerkleValue {
+impl<BigUint: BigUintApi> TopDecode for ToMerkleValue<BigUint> {
     fn top_decode<I: TopDecodeInput>(input: I) -> Result<Self, DecodeError> {
         top_decode_from_nested(input)
     }

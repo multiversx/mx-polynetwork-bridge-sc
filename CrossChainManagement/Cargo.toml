@@ -43,3 +43,6 @@ path = "../common/util"
 
 [dependencies.block-header-sync]
 path = "../BlockHeaderSync"
+
+[dependencies.transaction-relayer]
+path = "../TransactionRelayer"

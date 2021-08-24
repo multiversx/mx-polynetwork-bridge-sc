@@ -7,7 +7,7 @@ use zero_copy_source::*;
 
 elrond_wasm::derive_imports!();
 
-#[derive(TypeAbi)]
+#[derive(TypeAbi, Clone)]
 pub struct TransactionArgs<BigUint: BigUintApi> {
     pub asset_hash: BoxedBytes,
     pub dest_address: BoxedBytes,

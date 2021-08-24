@@ -4,6 +4,27 @@ use transaction::TransactionArgs;
 
 elrond_wasm::imports!();
 
+const UNLOCK_METHOD_NAME: &[u8] = b"unlock";
+
+mod cross_chain_management_proxy {
+    use transaction::TransactionArgs;
+
+    elrond_wasm::imports!();
+
+    #[elrond_wasm::proxy]
+    pub trait CrossChainManagement {
+        #[payable("*")]
+        #[endpoint(createCrossChainTx)]
+        fn create_cross_chain_tx(
+            &self,
+            to_chain_id: u64,
+            to_contract_address: BoxedBytes,
+            method_name: BoxedBytes,
+            method_args: TransactionArgs<Self::BigUint>,
+        );
+    }
+}
+
 #[elrond_wasm::contract]
 pub trait TransactionRelayer {
     #[init]
@@ -23,6 +44,10 @@ pub trait TransactionRelayer {
         dest_address: BoxedBytes,
     ) -> SCResult<()> {
         require!(
+            payment_token.is_esdt(),
+            "eGLD payment not allowed, wrap your EGLD first"
+        );
+        require!(
             self.call_value().esdt_token_nonce() == 0,
             "Can only bridge fungible ESDTs"
         );
@@ -40,6 +65,8 @@ pub trait TransactionRelayer {
             "This specific token cannot be bridged"
         );
 
+        self.try_burn(&payment_token, &payment_amount)?;
+
         let caller = self.blockchain().get_caller();
         let tx_args = TransactionArgs {
             dest_address,
@@ -47,9 +74,15 @@ pub trait TransactionRelayer {
             amount: payment_amount,
         };
 
-        // TODO: Call CrossChainManagement SC to create the transaction
-        let _ccm_address = self.get_cross_chain_management_sc_address();
-        // require(eccm.crossChain(toChainId, toProxyHash, "unlock", txData), "EthCrossChainManager crossChain executed error!");
+        let ccm_address = self.get_cross_chain_management_sc_address();
+        self.cross_chain_management_proxy(ccm_address)
+            .create_cross_chain_tx(
+                to_chain_id,
+                dest_chain_proxy,
+                UNLOCK_METHOD_NAME.into(),
+                tx_args.clone(),
+            )
+            .execute_on_dest_context();
 
         self.lock_event(
             &payment_token,
@@ -67,6 +100,56 @@ pub trait TransactionRelayer {
 
     fn get_cross_chain_management_sc_address(&self) -> Address {
         self.blockchain().get_owner_address()
+    }
+
+    // TODO: Check that the destination is not a SC
+    fn async_transfer_esdt(
+        &self,
+        to: Address,
+        token_id: TokenIdentifier,
+        amount: Self::BigUint,
+    ) -> AsyncCall<Self::SendApi> {
+        let contract_call_raw =
+            ContractCall::<Self::SendApi, ()>::new(self.send(), to, BoxedBytes::empty())
+                .with_token_transfer(token_id, amount);
+
+        contract_call_raw.async_call()
+    }
+
+    fn try_mint(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
+        self.require_local_mint_role_set(&token_id)?;
+        self.send().esdt_local_mint(token_id, 0, amount);
+
+        Ok(())
+    }
+
+    fn try_burn(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
+        self.require_local_burn_role_set(&token_id)?;
+        self.send().esdt_local_burn(token_id, 0, amount);
+
+        Ok(())
+    }
+
+    fn require_local_mint_role_set(&self, token_id: &TokenIdentifier) -> SCResult<()> {
+        let roles = self.blockchain().get_esdt_local_roles(token_id);
+
+        require!(
+            roles.contains(&EsdtLocalRole::Mint),
+            "Local mint role not set"
+        );
+
+        Ok(())
+    }
+
+    fn require_local_burn_role_set(&self, token_id: &TokenIdentifier) -> SCResult<()> {
+        let roles = self.blockchain().get_esdt_local_roles(token_id);
+
+        require!(
+            roles.contains(&EsdtLocalRole::Burn),
+            "Local burn role not set"
+        );
+
+        Ok(())
     }
 
     // storage
@@ -95,4 +178,12 @@ pub trait TransactionRelayer {
         #[indexed] dest_address: &BoxedBytes,
         amount: &Self::BigUint,
     );
+
+    // proxies
+
+    #[proxy]
+    fn cross_chain_management_proxy(
+        &self,
+        to: Address,
+    ) -> cross_chain_management_proxy::Proxy<Self::SendApi>;
 }
