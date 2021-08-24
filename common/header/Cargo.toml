@@ -8,10 +8,10 @@ edition = "2018"
 path = "src/lib.rs"
 
 [dependencies.elrond-wasm]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.elrond-wasm-derive]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.util]
 version = "0.0.0"
@@ -25,6 +25,10 @@ path = "../signature"
 version = "0.0.0"
 path = "../public-key"
 
+[dependencies.eth-address]
+version = "0.0.0"
+path = "../eth-address"
+
 [dependencies.zero-copy-sink]
 version = "0.0.0"
 path = "../zero-copy-sink"
@@ -32,3 +36,6 @@ path = "../zero-copy-sink"
 [dependencies.zero-copy-source]
 version = "0.0.0"
 path = "../zero-copy-source"
+
+[dependencies.hex]
+version = "0.4.2"

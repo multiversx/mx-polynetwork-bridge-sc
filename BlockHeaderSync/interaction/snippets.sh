@@ -1,14 +1,14 @@
-ALICE="/home/elrond/elrond-sdk/erdpy/testnet/wallets/users/alice.pem"
+ALICE="/home/elrond/Downloads/devnetWalletKey.pem"
 ADDRESS=$(erdpy data load --key=address-testnet-blockHeaderSync)
 DEPLOY_TRANSACTION=$(erdpy data load --key=deployTransaction-testnet-blockHeaderSync)
-PROXY=http://localhost:7950 # For public testnet, replace with https://testnet-gateway.elrond.com
-CHAIN_ID=local-testnet
+PROXY=https://devnet-gateway.elrond.com
+CHAIN_ID=D
 PROJECT_HARDCODED="/home/elrond/sc-polynetwork-bridge-rs/BlockHeaderSync"
 
-# To get tx result, go to http://localhost:7950/transaction/tx_hash_here?withResults=true
-
 deploy() {
-    erdpy --verbose contract deploy --project=${PROJECT_HARDCODED} --nonce=${alice_nonce} --pem=${ALICE} --gas-limit=200000000 --send --outfile="deploy-testnet.interaction.json" --proxy=${PROXY} --chain=${CHAIN_ID} || return
+    erdpy --verbose contract deploy --project=${PROJECT_HARDCODED} --recall-nonce --pem=${ALICE} \
+    --gas-limit=200000000 --send --outfile="deploy-testnet.interaction.json" \
+    --proxy=${PROXY} --chain=${CHAIN_ID} || return
 
     TRANSACTION=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emitted_tx']['hash']")
     ADDRESS=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emitted_tx']['address']")

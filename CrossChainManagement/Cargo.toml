@@ -11,23 +11,29 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.elrond-wasm-derive]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.elrond-wasm-node]
-version = "0.16.2"
+version = "0.18.2"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.header]
 path = "../common/header"
 
+[dependencies.signature]
+path = "../common/signature"
+
 [dependencies.transaction]
 path = "../common/transaction"
+
+[dependencies.merkle-proof]
+path = "../common/merkle-proof"
 
 [dependencies.esdt-payment]
 path = "../common/esdt-payment"

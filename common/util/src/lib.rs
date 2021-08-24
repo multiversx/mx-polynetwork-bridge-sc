@@ -1,7 +1,5 @@
 #![no_std]
 
-pub const POLYCHAIN_EPOCH_HEIGHT: u32 = 60000;
-
 elrond_wasm::derive_imports!();
 
 // byte slice to hex converter

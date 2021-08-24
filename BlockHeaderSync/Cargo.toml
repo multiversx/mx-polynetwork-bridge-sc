@@ -11,17 +11,17 @@ path = "src/lib.rs"
 wasm-output-mode = [ "elrond-wasm-node",]
 
 [dependencies.elrond-wasm]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.elrond-wasm-derive]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.elrond-wasm-node]
-version = "0.16.2"
+version = "0.18.2"
 optional = true
 
 [dev-dependencies.elrond-wasm-debug]
-version = "0.16.2"
+version = "0.18.2"
 
 [dependencies.header]
 path = "../common/header"
@@ -32,5 +32,15 @@ path = "../common/signature"
 [dependencies.public-key]
 path = "../common/public-key"
 
+[dependencies.eth-address]
+path = "../common/eth-address"
+
 [dependencies.util]
 path = "../common/util"
+
+[dependencies.hex]
+version = "0.4.2"
+
+[dependencies.zero-copy-sink]
+version = "0.0.0"
+path = "../common/zero-copy-sink"

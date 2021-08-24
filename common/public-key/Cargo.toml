@@ -8,19 +8,5 @@ edition = "2018"
 path = "src/lib.rs"
 
 [dependencies.elrond-wasm]
-version = "0.16.2"
-
-[dependencies.elrond-wasm-derive]
-version = "0.16.2"
-
-[dependencies.util]
-version = "0.0.0"
-path = "../util"
-
-[dependencies.zero-copy-sink]
-version = "0.0.0"
-path = "../zero-copy-sink"
-
-[dependencies.zero-copy-source]
-version = "0.0.0"
-path = "../zero-copy-source"
+version = "0.18.2"
+features = ["derive"]
