@@ -82,7 +82,7 @@ impl<BigUint: BigUintApi> Transaction<BigUint> {
 
         method_args = TransactionArgs::decode_from_source(source)?;
 
-        return Ok(Transaction {
+        Ok(Transaction {
             source_chain_tx_hash,
             cross_chain_tx_id,
             from_contract_address,
@@ -90,11 +90,11 @@ impl<BigUint: BigUintApi> Transaction<BigUint> {
             to_contract_address,
             method_name,
             method_args,
-        });
+        })
     }
 
-    pub fn hash_transaction<CA: CryptoApi>(&mut self, api: CA) {
-        self.source_chain_tx_hash = api.sha256(self.get_partial_serialized().as_slice());
+    pub fn calculate_hash<CA: CryptoApi>(&self, api: CA) -> H256 {
+        api.sha256(self.get_partial_serialized().as_slice())
     }
 }
 

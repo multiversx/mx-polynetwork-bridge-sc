@@ -4,7 +4,7 @@ use transaction::TransactionArgs;
 
 elrond_wasm::imports!();
 
-const UNLOCK_METHOD_NAME: &[u8] = b"unlock";
+pub const UNLOCK_METHOD_NAME: &[u8] = b"unlock";
 
 mod cross_chain_management_proxy {
     use transaction::TransactionArgs;
@@ -31,6 +31,45 @@ pub trait TransactionRelayer {
     fn init(&self) {}
 
     // endpoints - owner-only
+
+    #[only_owner]
+    #[endpoint]
+    fn unlock(
+        &self,
+        args: TransactionArgs<Self::BigUint>,
+        from_contract_address: BoxedBytes,
+        from_chain_id: u64,
+    ) -> SCResult<AsyncCall<Self::SendApi>> {
+        require!(
+            !from_contract_address.is_empty(),
+            "from_contract_address cannot be empty"
+        );
+
+        let from_proxy_contract = self.proxy_hash_map(from_chain_id).get();
+        require!(
+            from_contract_address == from_proxy_contract,
+            "from_contract_address is not the expected proxy contract address"
+        );
+
+        require!(!args.asset_hash.is_empty(), "asset_hash cannot be empty");
+
+        let elrond_dest_address = self.try_convert_to_elrond_address(&args.dest_address)?;
+        require!(
+            !self.blockchain().is_smart_contract(&elrond_dest_address),
+            "cannot transfer to smart contract"
+        );
+
+        let token_id = TokenIdentifier::from(args.asset_hash.as_slice());
+        require!(
+            token_id.is_valid_esdt_identifier(),
+            "Invalid Token ID provided"
+        );
+        self.try_mint(&token_id, &args.amount)?;
+
+        self.unlock_event(&token_id, &elrond_dest_address, &args.amount);
+
+        Ok(self.async_transfer_esdt(elrond_dest_address, token_id, args.amount))
+    }
 
     // endpoints
 
@@ -102,7 +141,15 @@ pub trait TransactionRelayer {
         self.blockchain().get_owner_address()
     }
 
-    // TODO: Check that the destination is not a SC
+    fn try_convert_to_elrond_address(&self, address: &BoxedBytes) -> SCResult<Address> {
+        require!(
+            address.len() == Address::len_bytes(),
+            "Wrong address format, it should be exactly 32 bytes"
+        );
+
+        Ok(Address::from_slice(address.as_slice()))
+    }
+
     fn async_transfer_esdt(
         &self,
         to: Address,
@@ -117,14 +164,14 @@ pub trait TransactionRelayer {
     }
 
     fn try_mint(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
-        self.require_local_mint_role_set(&token_id)?;
+        self.require_local_mint_role_set(token_id)?;
         self.send().esdt_local_mint(token_id, 0, amount);
 
         Ok(())
     }
 
     fn try_burn(&self, token_id: &TokenIdentifier, amount: &Self::BigUint) -> SCResult<()> {
-        self.require_local_burn_role_set(&token_id)?;
+        self.require_local_burn_role_set(token_id)?;
         self.send().esdt_local_burn(token_id, 0, amount);
 
         Ok(())
@@ -176,6 +223,14 @@ pub trait TransactionRelayer {
         #[indexed] to_chain_id: u64,
         #[indexed] to_asset_hash: &BoxedBytes,
         #[indexed] dest_address: &BoxedBytes,
+        amount: &Self::BigUint,
+    );
+
+    #[event("unlock_event")]
+    fn unlock_event(
+        &self,
+        #[indexed] to_asset: &TokenIdentifier,
+        #[indexed] receiver: &Address,
         amount: &Self::BigUint,
     );
 

@@ -17,14 +17,14 @@ impl NestedDecodeInput for ZeroCopySource {
 
     fn read_into(&mut self, into: &mut [u8]) -> Result<(), DecodeError> {
         if self.get_bytes_left() >= into.len() {
-            for i in 0..into.len() {
-                into[i] = self.source[self.index + i];
+            for (i, byte) in into.iter_mut().enumerate() {
+                *byte = self.source[self.index + i];
             }
 
             return Ok(());
         }
 
-        return Err(DecodeError::INPUT_TOO_SHORT);
+        Err(DecodeError::INPUT_TOO_SHORT)
     }
 
     fn read_into_or_exit<ExitCtx: Clone>(
@@ -58,10 +58,9 @@ impl NestedDecodeInput for ZeroCopySource {
     ) -> &[u8] {
         let result = self.read_slice(length);
 
-        if result.is_ok() {
-            result.unwrap_or_default()
-        } else {
-            exit(c, result.unwrap_err());
+        match result {
+            Ok(slice) => slice,
+            Err(err) => exit(c, err),
         }
     }
 
@@ -205,16 +204,12 @@ impl ZeroCopySource {
     }
 
     pub fn next_address(&mut self) -> Option<Address> {
-        match self.next_bytes(Address::len_bytes()) {
-            Some(address_bytes) => Some(Address::from_slice(address_bytes.as_slice())),
-            None => None,
-        }
+        self.next_bytes(Address::len_bytes())
+            .map(|address_bytes| Address::from_slice(address_bytes.as_slice()))
     }
 
     pub fn next_hash(&mut self) -> Option<H256> {
-        match self.next_bytes(H256::len_bytes()) {
-            Some(hash_bytes) => Some(H256::from_slice(hash_bytes.as_slice())),
-            None => None,
-        }
+        self.next_bytes(H256::len_bytes())
+            .map(|hash_bytes| H256::from_slice(hash_bytes.as_slice()))
     }
 }

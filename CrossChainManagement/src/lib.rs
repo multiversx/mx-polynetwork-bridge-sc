@@ -182,6 +182,16 @@ pub trait CrossChainManagement {
         let to_merkle_value = ToMerkleValue::top_decode(tx_raw.as_slice())?;
 
         require!(
+            to_merkle_value.tx.method_name == transaction_relayer::UNLOCK_METHOD_NAME.into(),
+            "Only unlock method may be called"
+        );
+
+        /*
+        let actual_tx_hash = to_merkle_value.tx.calculate_hash(self.crypto());
+        require!(to_merkle_value.tx.source_chain_tx_hash == actual_tx_hash, "Transaction hash mismatch");
+        */
+
+        require!(
             self.tx_by_hash(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash)
                 .is_empty(),
             "Transaction was already processed"
@@ -190,9 +200,14 @@ pub trait CrossChainManagement {
         self.tx_by_hash(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash)
             .set(&to_merkle_value.tx);
 
-        //////////////////////////////////////////////////////////
-        // TODO: Create and send transaction to a "relayer" SC
-        /////////////////////////////////////////////////////////
+        let transaction_relayer_address = self.transaction_relayer_contract_address().get();
+        self.transaction_relayer_proxy(transaction_relayer_address)
+            .unlock(
+                to_merkle_value.tx.method_args,
+                to_merkle_value.tx.from_contract_address,
+                to_merkle_value.from_chain_id,
+            )
+            .execute_on_dest_context();
 
         Ok(())
     }
@@ -229,11 +244,11 @@ pub trait CrossChainManagement {
             cross_chain_tx_id: BoxedBytes::empty(), // TODO: serialize tx_id if needed, discuss
             from_contract_address: transaction_relayer_address.into_boxed_bytes(),
             to_chain_id,
-            to_contract_address: to_contract_address.clone(),
+            to_contract_address,
             method_name,
             method_args,
         };
-        tx.hash_transaction(self.crypto());
+        tx.source_chain_tx_hash = tx.calculate_hash(self.crypto());
 
         self.tx_by_hash(own_chain_id, &tx.source_chain_tx_hash)
             .set(&tx);
@@ -264,15 +279,6 @@ pub trait CrossChainManagement {
     }
 
     // private
-
-    fn try_convert_to_elrond_address(&self, address: &BoxedBytes) -> SCResult<Address> {
-        require!(
-            address.len() == Address::len_bytes(),
-            "Wrong address format, it should be exactly 32 bytes"
-        );
-
-        Ok(Address::from_slice(address.as_slice()))
-    }
 
     fn data_or_empty(&self, to: &Address, data: &'static [u8]) -> &[u8] {
         if self.blockchain().is_smart_contract(to) {

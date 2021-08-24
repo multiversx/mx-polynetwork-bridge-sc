@@ -35,9 +35,6 @@ path = "../common/transaction"
 [dependencies.merkle-proof]
 path = "../common/merkle-proof"
 
-[dependencies.esdt-payment]
-path = "../common/esdt-payment"
-
 [dependencies.util]
 path = "../common/util"
 

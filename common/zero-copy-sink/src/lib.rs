@@ -14,6 +14,12 @@ impl NestedEncodeOutput for ZeroCopySink {
     }
 }
 
+impl Default for ZeroCopySink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // little endian encoding is used
 impl ZeroCopySink {
     pub fn new() -> Self {
@@ -33,7 +39,7 @@ impl ZeroCopySink {
     }
 
     pub fn write_bool(&mut self, boolean: bool) {
-        if boolean == true {
+        if boolean {
             self.write_u8(1u8);
         } else {
             self.write_u8(0u8);
