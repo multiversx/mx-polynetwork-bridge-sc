@@ -450,11 +450,11 @@ pub trait CrossChainManagement: token_op::TokenTransferModule {
         -> SingleValueMapper<Self::Storage, TransactionStatus>;
 
     #[storage_mapper("tokenWhitelist")]
-    fn token_whitelist(&self) -> SetMapper<Self::Storage, TokenIdentifier>;
+    fn token_whitelist(&self) -> SafeSetMapper<Self::Storage, TokenIdentifier>;
 
     // Approved address list - These addresses can mark transactions as executed/rejected
     // which triggers a burn/refund respectively
     // Only for Elrond -> other_chain transactions
     #[storage_mapper("approvedAddressList")]
-    fn approved_address_list(&self) -> SetMapper<Self::Storage, Address>;
+    fn approved_address_list(&self) -> SafeSetMapper<Self::Storage, Address>;
 }
