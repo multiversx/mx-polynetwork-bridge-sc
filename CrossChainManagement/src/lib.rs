@@ -1,6 +1,7 @@
 #![no_std]
 #![allow(non_snake_case)]
 
+use elrond_wasm::elrond_codec::TopEncode;
 use header::Header;
 use merkle_proof::MerkleProof;
 use signature::Signature;
@@ -186,19 +187,11 @@ pub trait CrossChainManagement {
             "Only unlock method may be called"
         );
 
-        /*
-        let actual_tx_hash = to_merkle_value.tx.calculate_hash(self.crypto());
-        require!(to_merkle_value.tx.source_chain_tx_hash == actual_tx_hash, "Transaction hash mismatch");
-        */
-
         require!(
-            self.tx_by_hash(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash)
-                .is_empty(),
+            !self.does_tx_exist(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash),
             "Transaction was already processed"
         );
-
-        self.tx_by_hash(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash)
-            .set(&to_merkle_value.tx);
+        self.set_tx_exists(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash);
 
         let transaction_relayer_address = self.transaction_relayer_contract_address().get();
         self.transaction_relayer_proxy(transaction_relayer_address)
@@ -232,16 +225,14 @@ pub trait CrossChainManagement {
         );
 
         let own_chain_id = self.own_chain_id().get();
-
         require!(
             to_chain_id != own_chain_id,
             "Must send to a chain other than Elrond"
         );
 
-        let tx_id = self.cross_chain_tx_id(to_chain_id).get();
         let mut tx = Transaction {
             source_chain_tx_hash: H256::zero(),
-            cross_chain_tx_id: BoxedBytes::empty(), // TODO: serialize tx_id if needed, discuss
+            cross_chain_tx_id: self.get_and_increment_cross_chain_tx_id(),
             from_contract_address: transaction_relayer_address.into_boxed_bytes(),
             to_chain_id,
             to_contract_address,
@@ -250,43 +241,18 @@ pub trait CrossChainManagement {
         };
         tx.source_chain_tx_hash = tx.calculate_hash(self.crypto());
 
-        self.tx_by_hash(own_chain_id, &tx.source_chain_tx_hash)
-            .set(&tx);
-        self.tx_status(&tx.source_chain_tx_hash)
-            .set(&TransactionStatus::Pending);
-        self.pending_cross_chain_tx_list()
-            .push_back(tx.source_chain_tx_hash.clone());
-        self.cross_chain_tx_id(to_chain_id).set(&(tx_id + 1));
+        require!(
+            !self.does_tx_exist(own_chain_id, &tx.source_chain_tx_hash),
+            "Transaction was already processed"
+        );
+        self.set_tx_exists(own_chain_id, &tx.source_chain_tx_hash);
 
         self.create_tx_event(&tx);
 
         Ok(())
     }
 
-    // views
-
-    #[view(getTxByHash)]
-    fn get_tx_by_hash(
-        &self,
-        from_chain_id: u64,
-        poly_tx_hash: H256,
-    ) -> OptionalResult<Transaction<Self::BigUint>> {
-        if !self.tx_by_hash(from_chain_id, &poly_tx_hash).is_empty() {
-            OptionalResult::Some(self.tx_by_hash(from_chain_id, &poly_tx_hash).get())
-        } else {
-            OptionalResult::None
-        }
-    }
-
     // private
-
-    fn data_or_empty(&self, to: &Address, data: &'static [u8]) -> &[u8] {
-        if self.blockchain().is_smart_contract(to) {
-            &[]
-        } else {
-            data
-        }
-    }
 
     fn require_caller_approved(&self) -> SCResult<()> {
         let caller = self.blockchain().get_caller();
@@ -298,22 +264,23 @@ pub trait CrossChainManagement {
         Ok(())
     }
 
-    // callbacks
+    fn get_and_increment_cross_chain_tx_id(&self) -> BoxedBytes {
+        self.cross_chain_tx_id().update(|tx_id| {
+            let mut serialized = Vec::new();
+            let _ = tx_id.top_encode(&mut serialized);
 
-    #[callback]
-    fn async_transfer_callback(
-        &self,
-        poly_tx_hash: H256,
-        #[call_result] result: AsyncCallResult<()>,
-    ) {
-        match result {
-            AsyncCallResult::Ok(()) => self
-                .tx_status(&poly_tx_hash)
-                .set(&TransactionStatus::Executed),
-            AsyncCallResult::Err(_) => self
-                .tx_status(&poly_tx_hash)
-                .set(&TransactionStatus::Rejected),
-        }
+            *tx_id += 1;
+
+            serialized.into()
+        })
+    }
+
+    fn does_tx_exist(&self, from_chain_id: u64, poly_tx_hash: &H256) -> bool {
+        self.tx_exists(from_chain_id, poly_tx_hash).get()
+    }
+
+    fn set_tx_exists(&self, from_chain_id: u64, poly_tx_hash: &H256) {
+        self.tx_exists(from_chain_id, poly_tx_hash).set(&true);
     }
 
     // proxies
@@ -354,23 +321,14 @@ pub trait CrossChainManagement {
 
     #[view(getCrossChainTxId)]
     #[storage_mapper("crossChainTxId")]
-    fn cross_chain_tx_id(&self, chain_id: u64) -> SingleValueMapper<Self::Storage, u64>;
+    fn cross_chain_tx_id(&self) -> SingleValueMapper<Self::Storage, u64>;
 
-    #[storage_mapper("txByHash")]
-    fn tx_by_hash(
+    #[storage_mapper("txExists")]
+    fn tx_exists(
         &self,
         from_chain_id: u64,
         poly_tx_hash: &H256,
-    ) -> SingleValueMapper<Self::Storage, Transaction<Self::BigUint>>;
-
-    // list of hashes for pending tx from elrond to another chain
-    #[storage_mapper("pendingCrosschainTxList")]
-    fn pending_cross_chain_tx_list(&self) -> LinkedListMapper<Self::Storage, H256>;
-
-    #[view(getTxStatus)]
-    #[storage_mapper("txStatus")]
-    fn tx_status(&self, poly_tx_hash: &H256)
-        -> SingleValueMapper<Self::Storage, TransactionStatus>;
+    ) -> SingleValueMapper<Self::Storage, bool>;
 
     // Approved address list - These addresses can mark transactions as executed/rejected
     // which triggers a burn/refund respectively
