@@ -193,13 +193,7 @@ pub trait CrossChainManagement {
         );
         self.set_tx_exists(to_merkle_value.from_chain_id, &to_merkle_value.poly_tx_hash);
 
-        self.receive_tx_event(
-            &to_merkle_value.poly_tx_hash,
-            to_merkle_value.from_chain_id,
-            &to_merkle_value.tx.from_contract_address,
-            &to_merkle_value.tx.method_name,
-            &to_merkle_value.tx.method_args,
-        );
+        self.receive_tx_event(&to_merkle_value.tx);
 
         let transaction_relayer_address = self.transaction_relayer_contract_address().get();
         self.transaction_relayer_proxy(transaction_relayer_address)
@@ -238,7 +232,7 @@ pub trait CrossChainManagement {
             "Must send to a chain other than Elrond"
         );
 
-        let tx = Transaction {
+        let mut tx = Transaction {
             source_chain_tx_hash: H256::zero(),
             cross_chain_tx_id: self.get_and_increment_cross_chain_tx_id(),
             from_contract_address: transaction_relayer_address.into_boxed_bytes(),
@@ -247,21 +241,15 @@ pub trait CrossChainManagement {
             method_name,
             method_args,
         };
-        let tx_hash = tx.calculate_hash(self.crypto());
+        tx.source_chain_tx_hash = tx.calculate_hash(self.crypto());
 
         require!(
-            !self.does_tx_exist(own_chain_id, &tx_hash),
+            !self.does_tx_exist(own_chain_id, &tx.source_chain_tx_hash),
             "Transaction was already processed"
         );
-        self.set_tx_exists(own_chain_id, &tx_hash);
+        self.set_tx_exists(own_chain_id, &tx.source_chain_tx_hash);
 
-        self.create_tx_event(
-            &tx_hash,
-            tx.to_chain_id,
-            &tx.to_contract_address,
-            &tx.method_name,
-            &tx.method_args,
-        );
+        self.create_tx_event(&tx);
 
         Ok(())
     }
@@ -315,25 +303,11 @@ pub trait CrossChainManagement {
 
     // for tx from Elrond to another chain
     #[event("createTransaction")]
-    fn create_tx_event(
-        &self,
-        #[indexed] poly_tx_hash: &H256,
-        #[indexed] to_chain_id: u64,
-        #[indexed] to_contract_address: &BoxedBytes,
-        #[indexed] method_name: &BoxedBytes,
-        method_args: &TransactionArgs<Self::BigUint>,
-    );
+    fn create_tx_event(&self, tx: &Transaction<Self::BigUint>);
 
     // for tx from another chain to Elrond
     #[event("receiveTransaction")]
-    fn receive_tx_event(
-        &self,
-        #[indexed] poly_tx_hash: &H256,
-        #[indexed] from_chain_id: u64,
-        #[indexed] from_contract_address: &BoxedBytes,
-        #[indexed] method_name: &BoxedBytes,
-        method_args: &TransactionArgs<Self::BigUint>,
-    );
+    fn receive_tx_event(&self, tx: &Transaction<Self::BigUint>);
 
     // storage
 
