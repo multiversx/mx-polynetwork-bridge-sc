@@ -20,6 +20,8 @@ impl<BigUint: BigUintApi> TransactionArgs<BigUint> {
         let dest_address;
         let amount;
 
+        let _ = source.next_var_bytes(); // ignore serialized struct byte length
+
         match source.next_var_bytes() {
             Some(val) => asset_hash = val,
             None => return Err(DecodeError::INPUT_TOO_SHORT),
@@ -50,6 +52,10 @@ impl<BigUint: BigUintApi> NestedEncode for TransactionArgs<BigUint> {
         sink.write_var_bytes(self.asset_hash.as_slice());
         sink.write_var_bytes(self.dest_address.as_slice());
         sink.write_u256(&self.amount)?;
+
+        let serialized = sink.get_sink();
+        sink = ZeroCopySink::new();
+        sink.write_var_bytes(serialized.as_slice());
 
         dest.write(sink.get_sink().as_slice());
 
