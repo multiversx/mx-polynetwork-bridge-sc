@@ -33,6 +33,28 @@ pub trait TransactionRelayer {
     // endpoints - owner-only
 
     #[only_owner]
+    #[endpoint(setAssetHash)]
+    fn set_asset_hash(
+        &self,
+        token_id: TokenIdentifier,
+        to_chain_id: u64,
+        other_chain_asset_hash: BoxedBytes,
+    ) -> SCResult<()> {
+        self.asset_hash_map(&token_id, to_chain_id)
+            .set(&other_chain_asset_hash);
+
+        Ok(())
+    }
+
+    #[only_owner]
+    #[endpoint(setChainProxy)]
+    fn set_chain_proxy_hash(&self, chain_id: u64, proxy_hash: BoxedBytes) -> SCResult<()> {
+        self.proxy_hash_map(chain_id).set(&proxy_hash);
+
+        Ok(())
+    }
+
+    #[only_owner]
     #[endpoint]
     fn unlock(
         &self,

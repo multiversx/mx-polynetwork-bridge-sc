@@ -61,6 +61,37 @@ pub trait CrossChainManagement {
         Ok(())
     }
 
+    #[only_owner]
+    #[endpoint(setTransactionRelayerAssetHash)]
+    fn set_transaction_relayer_asset_hash(
+        &self,
+        token_id: TokenIdentifier,
+        to_chain_id: u64,
+        other_chain_asset_hash: BoxedBytes,
+    ) -> SCResult<()> {
+        let tx_relayer_address = self.transaction_relayer_contract_address().get();
+        self.transaction_relayer_proxy(tx_relayer_address)
+            .set_asset_hash(token_id, to_chain_id, other_chain_asset_hash)
+            .execute_on_dest_context();
+
+        Ok(())
+    }
+
+    #[only_owner]
+    #[endpoint(setTransactionRelayerProxyHash)]
+    fn set_transaction_relayer_proxy_hash(
+        &self,
+        chain_id: u64,
+        proxy_hash: BoxedBytes,
+    ) -> SCResult<()> {
+        let tx_relayer_address = self.transaction_relayer_contract_address().get();
+        self.transaction_relayer_proxy(tx_relayer_address)
+            .set_chain_proxy_hash(chain_id, proxy_hash)
+            .execute_on_dest_context();
+
+        Ok(())
+    }
+
     // endpoints - approved addresses only
 
     /*
