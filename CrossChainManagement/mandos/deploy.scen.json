@@ -1,0 +1,49 @@
+{
+    "name": "setup accounts",
+    "steps": [
+        {
+            "step": "setState",
+            "accounts": {
+                "address:owner": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {}
+                }
+            },
+            "newAddresses": [
+                {
+                    "creatorAddress": "address:owner",
+                    "creatorNonce": "0",
+                    "newAddress": "sc:cross_chain_management"
+                },
+                {
+                    "creatorAddress": "sc:cross_chain_management",
+                    "creatorNonce": "0",
+                    "newAddress": "sc:transaction_relayer"
+                }
+            ]
+        },
+        {
+            "step": "scDeploy",
+            "txId": "deploy",
+            "tx": {
+                "from": "address:owner",
+                "contractCode": "file:../output/cross-chain-management.wasm",
+                "value": "0",
+                "arguments": [
+                    "sc:block_header_sync",
+                    "1",
+                    "file:../../TransactionRelayer/output/transaction-relayer.wasm"
+                ],
+                "gasLimit": "999,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*"
+            }
+        }
+    ]
+}

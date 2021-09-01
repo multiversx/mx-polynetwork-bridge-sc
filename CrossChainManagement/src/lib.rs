@@ -13,28 +13,12 @@ elrond_wasm::imports!();
 pub trait CrossChainManagement {
     // TODO: make upgrade-friendly
     #[init]
-    fn init(
-        &self,
-        header_sync_contract_address: Address,
-        own_chain_id: u64,
-        transaction_relayer_code: BoxedBytes,
-    ) -> SCResult<()> {
+    fn init(&self, header_sync_contract_address: Address, own_chain_id: u64) -> SCResult<()> {
         require!(
             self.blockchain()
                 .is_smart_contract(&header_sync_contract_address),
             "Provided HeaderSync address is not a smart contract address"
         );
-
-        let deploy_gas = self.blockchain().get_gas_left() / 2;
-        let opt_address = self
-            .transaction_relayer_proxy(Address::zero())
-            .init()
-            .with_gas_limit(deploy_gas)
-            .deploy_contract(&transaction_relayer_code, CodeMetadata::DEFAULT);
-
-        let transaction_relayer_address = opt_address.ok_or("Transaction Relayer deploy failed")?;
-        self.transaction_relayer_contract_address()
-            .set(&transaction_relayer_address);
 
         self.header_sync_contract_address()
             .set(&header_sync_contract_address);
@@ -46,19 +30,25 @@ pub trait CrossChainManagement {
     // endpoints - owner-only
 
     #[only_owner]
-    #[endpoint(addAddressToApprovedlist)]
-    fn add_address_to_approved_list(&self, approved_address: Address) -> SCResult<()> {
-        self.approved_address_list().insert(approved_address);
+    #[endpoint(deployTransactionRelayerContract)]
+    fn deploy_transaction_relayer_contract(&self, contract_code: BoxedBytes) -> SCResult<Address> {
+        require!(
+            self.transaction_relayer_contract_address().is_empty(),
+            "Transaction Relayer SC already deployed"
+        );
 
-        Ok(())
-    }
+        let deploy_gas = self.blockchain().get_gas_left() / 2;
+        let opt_address = self
+            .transaction_relayer_proxy(Address::zero())
+            .init()
+            .with_gas_limit(deploy_gas)
+            .deploy_contract(&contract_code, CodeMetadata::DEFAULT);
 
-    #[only_owner]
-    #[endpoint(removeAddressFromApprovedlist)]
-    fn remove_address_from_approved_list(&self, approved_address: Address) -> SCResult<()> {
-        self.approved_address_list().remove(&approved_address);
+        let transaction_relayer_address = opt_address.ok_or("Transaction Relayer deploy failed")?;
+        self.transaction_relayer_contract_address()
+            .set(&transaction_relayer_address);
 
-        Ok(())
+        Ok(transaction_relayer_address)
     }
 
     #[only_owner]
@@ -69,6 +59,8 @@ pub trait CrossChainManagement {
         to_chain_id: u64,
         other_chain_asset_hash: BoxedBytes,
     ) -> SCResult<()> {
+        self.require_transaction_relayer_deployed()?;
+
         let tx_relayer_address = self.transaction_relayer_contract_address().get();
         self.transaction_relayer_proxy(tx_relayer_address)
             .set_asset_hash(token_id, to_chain_id, other_chain_asset_hash)
@@ -84,6 +76,8 @@ pub trait CrossChainManagement {
         chain_id: u64,
         proxy_hash: BoxedBytes,
     ) -> SCResult<()> {
+        self.require_transaction_relayer_deployed()?;
+
         let tx_relayer_address = self.transaction_relayer_contract_address().get();
         self.transaction_relayer_proxy(tx_relayer_address)
             .set_chain_proxy_hash(chain_id, proxy_hash)
@@ -91,57 +85,6 @@ pub trait CrossChainManagement {
 
         Ok(())
     }
-
-    // endpoints - approved addresses only
-
-    /*
-    #[endpoint(setOffchainTxStatus)]
-    fn set_offchain_tx_status(
-        &self,
-        poly_tx_hash: H256,
-        tx_status: TransactionStatus,
-    ) -> SCResult<()> {
-        self.require_caller_approved()?;
-        require!(
-            !self.tx_by_hash(&poly_tx_hash).is_empty(),
-            "Transaction does not exist"
-        );
-        require!(
-            self.tx_status(&poly_tx_hash).get() == TransactionStatus::InProgress,
-            "Transaction must be in InProgress status"
-        );
-
-        self.tx_status(&poly_tx_hash).set(&tx_status);
-
-        match tx_status {
-            TransactionStatus::Executed => {
-                self.try_burn_payment_for_tx(&poly_tx_hash)?;
-            }
-            TransactionStatus::Rejected => {
-                self.refund_payment_for_tx(&poly_tx_hash);
-            }
-            _ => return sc_error!("Transaction status may only be set to Executed or Rejected"),
-        }
-
-        Ok(())
-    }
-
-    /// Gets pending transactions from Elrond -> other_chain
-    #[endpoint(getNextPendingCrossChainTx)]
-    fn get_next_pending_cross_chain_tx(&self) -> SCResult<Transaction> {
-        self.require_caller_approved()?;
-
-        match self.pending_cross_chain_tx_list().pop_front() {
-            Some(poly_tx_hash) => {
-                self.tx_status(&poly_tx_hash)
-                    .set(&TransactionStatus::InProgress);
-
-                Ok(self.tx_by_hash(&poly_tx_hash).get())
-            }
-            None => sc_error!("No pending transactions exist"),
-        }
-    }
-    */
 
     #[endpoint(getMerkleProof)]
     fn get_merkle_proof(&self, proof: BoxedBytes, root: H256) -> SCResult<BoxedBytes> {
@@ -163,7 +106,7 @@ pub trait CrossChainManagement {
         raw_current_header: BoxedBytes,
         header_sigs: Vec<Signature>,
     ) -> SCResult<()> {
-        self.require_caller_approved()?;
+        self.require_transaction_relayer_deployed()?;
 
         let tx_header_hash = Header::hash_raw_header(self.crypto(), &raw_tx_header);
         let tx_header = Header::top_decode(raw_tx_header.as_slice())?;
@@ -250,6 +193,8 @@ pub trait CrossChainManagement {
         method_name: BoxedBytes,
         method_args: TransactionArgs<Self::BigUint>,
     ) -> SCResult<()> {
+        self.require_transaction_relayer_deployed()?;
+        
         let caller = self.blockchain().get_caller();
         let transaction_relayer_address = self.transaction_relayer_contract_address().get();
         require!(
@@ -287,11 +232,10 @@ pub trait CrossChainManagement {
 
     // private
 
-    fn require_caller_approved(&self) -> SCResult<()> {
-        let caller = self.blockchain().get_caller();
+    fn require_transaction_relayer_deployed(&self) -> SCResult<()> {
         require!(
-            self.approved_address_list().contains(&caller),
-            "Caller is not an approved address"
+            !self.transaction_relayer_contract_address().is_empty(),
+            "Transaction Relayer SC not deployed"
         );
 
         Ok(())
@@ -362,10 +306,4 @@ pub trait CrossChainManagement {
         from_chain_id: u64,
         poly_tx_hash: &H256,
     ) -> SingleValueMapper<Self::Storage, bool>;
-
-    // Approved address list - These addresses can mark transactions as executed/rejected
-    // which triggers a burn/refund respectively
-    // Only for Elrond -> other_chain transactions
-    #[storage_mapper("approvedAddressList")]
-    fn approved_address_list(&self) -> SafeSetMapper<Self::Storage, Address>;
 }
