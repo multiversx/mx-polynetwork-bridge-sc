@@ -32,13 +32,44 @@
                 "value": "0",
                 "arguments": [
                     "sc:block_header_sync",
-                    "1",
-                    "file:../../TransactionRelayer/output/transaction-relayer.wasm"
+                    "1"
                 ],
-                "gasLimit": "999,000,000",
+                "gasLimit": "200,000,000",
                 "gasPrice": "0"
             },
             "expect": {
+                "status": "0",
+                "message": "",
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "setState",
+            "newAddresses": [
+                {
+                    "creatorAddress": "sc:cross_chain_management",
+                    "creatorNonce": "0",
+                    "newAddress": "sc:transaction_relayer"
+                }
+            ]
+        },
+        {
+            "step": "scCall",
+            "txId": "deploy-tx-relayer-sc",
+            "tx": {
+                "from": "address:owner",
+                "to": "sc:cross_chain_management",
+                "value": "0",
+                "function": "deployTransactionRelayerContract",
+                "arguments": [
+                    "file:../../TransactionRelayer/output/transaction-relayer.wasm"
+                ],
+                "gasLimit": "200,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "out": [ "sc:transaction_relayer" ],
                 "status": "0",
                 "message": "",
                 "gas": "*",
