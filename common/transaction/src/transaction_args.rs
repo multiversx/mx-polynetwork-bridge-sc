@@ -20,7 +20,7 @@ impl<BigUint: BigUintApi> TransactionArgs<BigUint> {
         let dest_address;
         let amount;
 
-        let _ = source.next_var_bytes(); // ignore serialized struct byte length
+        let _ = source.next_var_uint(); // ignore serialized struct byte length
 
         match source.next_var_bytes() {
             Some(val) => asset_hash = val,
