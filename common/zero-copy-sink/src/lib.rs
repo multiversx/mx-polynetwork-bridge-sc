@@ -1,10 +1,11 @@
 #![no_std]
 
-use elrond_wasm::types::{Address, BoxedBytes, H256, Vec};
+use elrond_wasm::api::BigUintApi;
 use elrond_wasm::elrond_codec::*;
+use elrond_wasm::types::{Address, BoxedBytes, Vec, H256};
 
 pub struct ZeroCopySink {
-    sink: Vec<u8>
+    sink: Vec<u8>,
 }
 
 impl NestedEncodeOutput for ZeroCopySink {
@@ -13,12 +14,16 @@ impl NestedEncodeOutput for ZeroCopySink {
     }
 }
 
+impl Default for ZeroCopySink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // little endian encoding is used
 impl ZeroCopySink {
     pub fn new() -> Self {
-        ZeroCopySink {
-            sink: Vec::new()
-        }
+        ZeroCopySink { sink: Vec::new() }
     }
 
     pub fn get_sink(&self) -> BoxedBytes {
@@ -34,10 +39,9 @@ impl ZeroCopySink {
     }
 
     pub fn write_bool(&mut self, boolean: bool) {
-        if boolean == true {
+        if boolean {
             self.write_u8(1u8);
-        }
-        else {
+        } else {
             self.write_u8(0u8);
         }
     }
@@ -57,19 +61,29 @@ impl ZeroCopySink {
         self.write_u32((val >> 32) as u32);
     }
 
+    pub fn write_u256<BigUint: BigUintApi>(&mut self, val: &BigUint) -> Result<(), EncodeError> {
+        match val.to_bytes_be_pad_right(H256::len_bytes()) {
+            Some(mut bytes) => {
+                bytes.reverse();
+
+                self.write_bytes(&bytes);
+
+                Ok(())
+            }
+            None => Err(EncodeError::from(&b"Failed encoding u256"[..])),
+        }
+    }
+
     pub fn write_var_uint(&mut self, val: u64) {
         if val < 0xfd {
             self.write_u8(val as u8);
-        }
-        else if val <= 0xffff {
+        } else if val <= 0xffff {
             self.write_u8(0xfd);
             self.write_u16(val as u16);
-        }
-        else if val <= 0xffffff {
+        } else if val <= 0xffffff {
             self.write_u8(0xfe);
             self.write_u32(val as u32);
-        }
-        else {
+        } else {
             self.write_u8(0xff);
             self.write_u64(val);
         }

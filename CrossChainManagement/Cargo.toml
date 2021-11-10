@@ -35,11 +35,11 @@ path = "../common/transaction"
 [dependencies.merkle-proof]
 path = "../common/merkle-proof"
 
-[dependencies.esdt-payment]
-path = "../common/esdt-payment"
-
 [dependencies.util]
 path = "../common/util"
 
 [dependencies.block-header-sync]
 path = "../BlockHeaderSync"
+
+[dependencies.transaction-relayer]
+path = "../TransactionRelayer"

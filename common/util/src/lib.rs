@@ -1,7 +1,5 @@
 #![no_std]
 
-elrond_wasm::derive_imports!();
-
 // byte slice to hex converter
 
 pub mod hex_converter {

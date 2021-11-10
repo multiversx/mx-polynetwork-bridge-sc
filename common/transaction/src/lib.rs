@@ -1,5 +1,6 @@
 #![no_std]
 
+use elrond_wasm::api::{BigUintApi, CryptoApi};
 use elrond_wasm::elrond_codec::*;
 use elrond_wasm::types::{BoxedBytes, H256};
 
@@ -7,6 +8,12 @@ use zero_copy_sink::*;
 use zero_copy_source::*;
 
 elrond_wasm::derive_imports!();
+
+pub mod to_merkle_value;
+pub mod transaction_args;
+
+pub use to_merkle_value::*;
+pub use transaction_args::*;
 
 #[derive(NestedDecode, NestedEncode, TopDecode, TopEncode, TypeAbi, PartialEq)]
 pub enum TransactionStatus {
@@ -19,25 +26,17 @@ pub enum TransactionStatus {
 
 // Not using the built-in Address type for addresses, as not all chains have 32-byte addresses
 #[derive(TypeAbi)]
-pub struct Transaction {
+pub struct Transaction<BigUint: BigUintApi> {
     pub source_chain_tx_hash: H256,
     pub cross_chain_tx_id: BoxedBytes, // not used
     pub from_contract_address: BoxedBytes,
     pub to_chain_id: u64,
     pub to_contract_address: BoxedBytes,
     pub method_name: BoxedBytes,
-    pub method_args: Vec<BoxedBytes>, // TODO: Figure out argument format and fix deserialization
-	// In the ETH SC, all method_args come as a single var_bytes, not N var_bytes
+    pub method_args: TransactionArgs<BigUint>,
 }
 
-#[derive(TypeAbi)]
-pub struct ToMerkleValue {
-    pub poly_tx_hash: H256,
-    pub from_chain_id: u64,
-    pub tx: Transaction,
-}
-
-impl Transaction {
+impl<BigUint: BigUintApi> Transaction<BigUint> {
     pub fn get_partial_serialized(&self) -> BoxedBytes {
         self.serialize_partial().get_sink()
     }
@@ -49,7 +48,7 @@ impl Transaction {
         let to_chain_id;
         let to_contract_address;
         let method_name;
-        let mut method_args = Vec::new();
+        let method_args;
 
         match source.next_var_bytes() {
             Some(val) => source_chain_tx_hash = H256::from_slice(val.as_slice()),
@@ -81,19 +80,9 @@ impl Transaction {
             None => return Err(DecodeError::INPUT_TOO_SHORT),
         };
 
-        match source.next_var_uint() {
-            Some(len) => {
-                for _ in 0..len {
-                    match source.next_var_bytes() {
-                        Some(arg) => method_args.push(arg),
-                        None => return Err(DecodeError::INPUT_TOO_SHORT),
-                    }
-                }
-            }
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
+        method_args = TransactionArgs::decode_from_source(source)?;
 
-        return Ok(Transaction {
+        Ok(Transaction {
             source_chain_tx_hash,
             cross_chain_tx_id,
             from_contract_address,
@@ -101,12 +90,16 @@ impl Transaction {
             to_contract_address,
             method_name,
             method_args,
-        });
+        })
+    }
+
+    pub fn calculate_hash<CA: CryptoApi>(&self, api: CA) -> H256 {
+        api.sha256(self.get_partial_serialized().as_slice())
     }
 }
 
 // private methods
-impl Transaction {
+impl<BigUint: BigUintApi> Transaction<BigUint> {
     fn serialize_partial(&self) -> ZeroCopySink {
         let mut sink = ZeroCopySink::new();
 
@@ -116,16 +109,13 @@ impl Transaction {
         sink.write_var_bytes(self.to_contract_address.as_slice());
         sink.write_var_bytes(self.method_name.as_slice());
 
-        sink.write_var_uint(self.method_args.len() as u64);
-        for arg in &self.method_args {
-            sink.write_var_bytes(arg.as_slice());
-        }
+        let _ = self.method_args.dep_encode(&mut sink);
 
         sink
     }
 }
 
-impl NestedEncode for Transaction {
+impl<BigUint: BigUintApi> NestedEncode for Transaction<BigUint> {
     fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
         let mut sink = ZeroCopySink::new();
 
@@ -138,7 +128,7 @@ impl NestedEncode for Transaction {
     }
 }
 
-impl NestedDecode for Transaction {
+impl<BigUint: BigUintApi> NestedDecode for Transaction<BigUint> {
     fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
         let mut source = ZeroCopySource::new(input.flush());
 
@@ -146,72 +136,14 @@ impl NestedDecode for Transaction {
     }
 }
 
-impl TopEncode for Transaction {
+impl<BigUint: BigUintApi> TopEncode for Transaction<BigUint> {
     #[inline]
     fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
         top_encode_from_nested(self, output)
     }
 }
 
-impl TopDecode for Transaction {
-    fn top_decode<I: TopDecodeInput>(input: I) -> Result<Self, DecodeError> {
-        top_decode_from_nested(input)
-    }
-}
-
-impl NestedEncode for ToMerkleValue {
-    fn dep_encode<O: NestedEncodeOutput>(&self, dest: &mut O) -> Result<(), EncodeError> {
-        let mut sink = ZeroCopySink::new();
-
-        sink.write_var_bytes(self.poly_tx_hash.as_bytes());
-        sink.write_u64(self.from_chain_id);
-        self.tx.dep_encode(&mut sink)?;
-
-        dest.write(sink.get_sink().as_slice());
-
-        Ok(())
-    }
-}
-
-impl NestedDecode for ToMerkleValue {
-    fn dep_decode<I: NestedDecodeInput>(input: &mut I) -> Result<Self, DecodeError> {
-        let mut source = ZeroCopySource::new(input.flush());
-
-        let poly_tx_hash;
-        let from_chain_id;
-        let tx;
-
-        match source.next_var_bytes() {
-            Some(val) => poly_tx_hash = H256::from_slice(val.as_slice()),
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        match source.next_u64() {
-            Some(val) => from_chain_id = val,
-            None => return Err(DecodeError::INPUT_TOO_SHORT),
-        };
-
-        match Transaction::decode_from_source(&mut source) {
-            Result::Ok(val) => tx = val,
-            Result::Err(err) => return Err(err),
-        }
-
-        Ok(Self {
-            poly_tx_hash,
-            from_chain_id,
-            tx,
-        })
-    }
-}
-
-impl TopEncode for ToMerkleValue {
-    #[inline]
-    fn top_encode<O: TopEncodeOutput>(&self, output: O) -> Result<(), EncodeError> {
-        top_encode_from_nested(self, output)
-    }
-}
-
-impl TopDecode for ToMerkleValue {
+impl<BigUint: BigUintApi> TopDecode for Transaction<BigUint> {
     fn top_decode<I: TopDecodeInput>(input: I) -> Result<Self, DecodeError> {
         top_decode_from_nested(input)
     }

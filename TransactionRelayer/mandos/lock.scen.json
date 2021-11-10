@@ -1,0 +1,157 @@
+{
+    "name": "lock",
+    "steps": [
+        {
+            "step": "externalSteps",
+            "path": "../../CrossChainManagement/mandos/deploy.scen.json"
+        },
+        {
+            "step": "setState",
+            "accounts": {
+                "address:user": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": "1,000,000"
+                    },
+                    "storage": {}
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "set-asset-hash",
+            "tx": {
+                "from": "address:owner",
+                "to": "sc:cross_chain_management",
+                "value": "0",
+                "function": "setTransactionRelayerAssetHash",
+                "arguments": [
+                    "str:WEGLD-123456",
+                    "5",
+                    "str:some_erc20_address"
+                ],
+                "gasLimit": "200,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "out": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "set-proxy-hash",
+            "tx": {
+                "from": "address:owner",
+                "to": "sc:cross_chain_management",
+                "value": "0",
+                "function": "setTransactionRelayerProxyHash",
+                "arguments": [
+                    "5",
+                    "str:tx_relayer_addr_other_chain"
+                ],
+                "gasLimit": "200,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "out": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        },
+        {
+            "step": "checkState",
+            "accounts": {
+                "sc:transaction_relayer": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "storage": {
+                        "str:proxyHashMap|u64:5": "str:tx_relayer_addr_other_chain",
+                        "str:assetHashMap|nested:str:WEGLD-123456|u64:5": "str:some_erc20_address" 
+                    },
+                    "code": "file:../output/transaction-relayer.wasm"
+                },
+                "sc:cross_chain_management": {
+                    "nonce": "1",
+                    "balance": "0",
+                    "storage": {
+                        "str:ownChainId": "1",
+                        "str:headerSyncContractAddress": "sc:block_header_sync",
+                        "str:transactionRelayerContractAddress": "sc:transaction_relayer"
+                    },
+                    "code": "file:../../CrossChainManagement/output/cross-chain-management.wasm"
+                },
+                "+": {}
+            }
+        },
+        {
+            "step": "setState",
+            "comment": "set local burn role",
+            "accounts": {
+                "sc:transaction_relayer": {
+                    "nonce": "0",
+                    "balance": "0",
+                    "esdt": {
+                        "str:WEGLD-123456": {
+                            "balance": "0",
+                            "roles": [
+                                "ESDTRoleLocalMint",
+                                "ESDTRoleLocalBurn"
+                            ]
+                        }
+                    },
+                    "storage": {
+                        "str:proxyHashMap|u64:5": "str:tx_relayer_addr_other_chain",
+                        "str:assetHashMap|nested:str:WEGLD-123456|u64:5": "str:some_erc20_address" 
+                    },
+                    "code": "file:../output/transaction-relayer.wasm",
+                    "owner": "sc:cross_chain_management"
+                },
+                "sc:cross_chain_management": {
+                    "nonce": "1",
+                    "balance": "0",
+                    "storage": {
+                        "str:ownChainId": "1",
+                        "str:headerSyncContractAddress": "sc:block_header_sync",
+                        "str:transactionRelayerContractAddress": "sc:transaction_relayer"
+                    },
+                    "code": "file:../../CrossChainManagement/output/cross-chain-management.wasm",
+                    "owner": "address:owner"
+                }
+            }
+        },
+        {
+            "step": "scCall",
+            "txId": "lock",
+            "tx": {
+                "from": "address:user",
+                "to": "sc:transaction_relayer",
+                "value": "0",
+                "esdt": {
+                    "tokenIdentifier": "str:WEGLD-123456",
+                    "value": "1,000,000"
+                },
+                "function": "lock",
+                "arguments": [
+                    "5",
+                    "str:some_eth_address"
+                ],
+                "gasLimit": "200,000,000",
+                "gasPrice": "0"
+            },
+            "expect": {
+                "status": "0",
+                "message": "",
+                "out": [],
+                "gas": "*",
+                "refund": "*"
+            }
+        }
+    ]
+}

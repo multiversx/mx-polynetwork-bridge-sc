@@ -1,5 +1,6 @@
 [workspace]
 members = [
   "BlockHeaderSync",
-  "CrossChainManagement"
+  "CrossChainManagement",
+  "TransactionRelayer"
 ]
